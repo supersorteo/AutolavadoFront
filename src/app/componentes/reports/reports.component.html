@@ -1,0 +1,186 @@
+ <div class="row mb-4">
+      <div class="col-12">
+        <h2 class="h4 mb-3">Reportes y Estadísticas</h2>
+      </div>
+    </div>
+
+    <!-- Estadísticas Generales -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="card stats-card">
+          <div class="card-body text-center">
+            <div class="stats-number text-primary">{{totalSpaces}}</div>
+            <div class="stats-label">Total Espacios</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stats-card">
+          <div class="card-body text-center">
+            <div class="stats-number text-success">{{occupiedSpaces}}</div>
+            <div class="stats-label">Ocupados</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stats-card">
+          <div class="card-body text-center">
+            <div class="stats-number text-info">{{freeSpaces}}</div>
+            <div class="stats-label">Libres</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card stats-card">
+          <div class="card-body text-center">
+            <div class="stats-number text-warning">{{occupancyRate}}%</div>
+            <div class="stats-label">Ocupación</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Por Subsuelo -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Estado por Subsuelo</h5>
+        <div class="table-responsive">
+          <table class="table table-dark table-striped">
+            <thead>
+              <tr>
+                <th>Subsuelo</th>
+                <th>Total</th>
+                <th>Ocupados</th>
+                <th>Libres</th>
+                <th>% Ocupación</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let stat of subsueloStats">
+                <td>{{stat.label}}</td>
+                <td>{{stat.total}}</td>
+                <td>
+                  <span class="badge bg-danger">{{stat.occupied}}</span>
+                </td>
+                <td>
+                  <span class="badge bg-success">{{stat.free}}</span>
+                </td>
+                <td>
+                  <div class="progress" style="height: 20px;">
+                    <div class="progress-bar"
+                         [style.width.%]="stat.occupancyRate"
+                         [class]="getProgressBarClass(stat.occupancyRate)">
+                      {{stat.occupancyRate}}%
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clientes Actuales -->
+   <!-- Reemplaza la sección de la tabla en reports.component.html por esto -->
+<div class="card mb-4">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="card-title mb-0">Clientes Actuales ({{filteredClients.length}})</h5>
+      <div class="input-group" style="width: 300px;">
+        <input type="text" class="form-control" placeholder="Buscar cliente..." [(ngModel)]="searchTerm" (input)="onSearchClients()">
+      </div>
+    </div>
+    <div class="table-responsive" *ngIf="filteredClients.length > 0">
+      <table class="table table-dark table-striped">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Cliente</th>
+            <th>Espacio</th>
+            <th>Teléfono</th>
+            <th>Vehículo</th>
+            <th>Tiempo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let client of paginatedClients">
+            <td>
+              <span class="code-badge">{{client.code}}</span>
+            </td>
+            <td>{{client.name}}</td>
+            <td>
+              <span class="badge bg-info">{{client.spaceKey}}</span>
+            </td>
+            <td>+{{client.phoneIntl}}</td>
+            <td>{{client.vehicle || '-'}}</td>
+            <td>
+              <span class="text-warning">{{getElapsedTime(client.spaceKey)}}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <nav aria-label="Paginación de clientes">
+        <ul class="pagination justify-content-center">
+          <li class="page-item" [class.disabled]="currentPage === 1">
+            <a class="page-link" (click)="setPage(currentPage - 1)">Previous</a>
+          </li>
+          <li class="page-item" *ngFor="let page of pageNumbers" [class.active]="page === currentPage">
+            <a class="page-link" (click)="setPage(page)">{{page}}</a>
+          </li>
+          <li class="page-item" [class.disabled]="currentPage === totalPages">
+            <a class="page-link" (click)="setPage(currentPage + 1)">Next</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+    <div *ngIf="filteredClients.length === 0" class="text-center text-muted py-4">
+      No hay clientes actualmente
+    </div>
+  </div>
+</div>
+
+    <!-- Espacios por Tiempo -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Tiempo de Ocupación</h5>
+        <div class="row">
+          <div class="col-md-4">
+            <div class="time-stat">
+              <div class="time-number text-success">{{timeStats.under1h}}</div>
+              <div class="time-label">Menos de 1h</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="time-stat">
+              <div class="time-number text-warning">{{timeStats.between1h3h}}</div>
+              <div class="time-label">1h - 3h</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="time-stat">
+              <div class="time-number text-danger">{{timeStats.over3h}}</div>
+              <div class="time-label">Más de 3h</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Acciones -->
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Acciones</h5>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-success" (click)="exportData()">
+            Exportar Datos (JSON)
+          </button>
+          <button class="btn btn-outline-info" (click)="refreshStats()">
+            Actualizar Estadísticas
+          </button>
+          <button class="btn btn-outline-warning" (click)="generateReport()">
+            Generar Reporte
+          </button>
+        </div>
+      </div>
+    </div>
