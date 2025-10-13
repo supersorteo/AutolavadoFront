@@ -14,7 +14,9 @@ export interface Space {
   occupied: boolean;
   hold: boolean;
   clientId: string | null;
+  client: Client | null;
   startTime: number | null;
+   displayName?: string;
 }
 
 export interface Client {
@@ -84,7 +86,7 @@ export class AutolavadoService {
   }
 
   // Gestión de almacenamiento
-  private loadAll(): void {
+  private loadAll0(): void {
     try {
       const subsuelos = JSON.parse(localStorage.getItem(this.LS_KEYS.subs) || '[]') as Subsuelo[];
       const spaces = JSON.parse(localStorage.getItem(this.LS_KEYS.spaces) || '{}') as { [key: string]: Space };
@@ -100,6 +102,57 @@ export class AutolavadoService {
       this.clientsSubject.next({});
     }
   }
+
+  loadAll1(): void {
+  try {
+    const subsuelos = JSON.parse(localStorage.getItem(this.LS_KEYS.subs) || '[]') as Subsuelo[];
+    const spaces = JSON.parse(localStorage.getItem(this.LS_KEYS.spaces) || '{}') as { [key: string]: Space };
+    const clients = JSON.parse(localStorage.getItem(this.LS_KEYS.clients) || '{}') as { [key: string]: Client };
+
+    // Resolver clientes completos para espacios ocupados
+    Object.values(spaces).forEach(space => {
+      if (space.occupied && space.clientId && clients[space.clientId]) {
+        space.client = clients[space.clientId];
+      }
+    });
+
+    this.subsuelosSubject.next(subsuelos);
+    this.spacesSubject.next(spaces);
+    this.clientsSubject.next(clients);
+  } catch (error) {
+    console.error('Error al cargar datos de localStorage:', error);
+    this.subsuelosSubject.next([]);
+    this.spacesSubject.next({});
+    this.clientsSubject.next({});
+  }
+}
+
+loadAll(): void {
+  try {
+    const subsuelos = JSON.parse(localStorage.getItem(this.LS_KEYS.subs) || '[]') as Subsuelo[];
+    const spaces = JSON.parse(localStorage.getItem(this.LS_KEYS.spaces) || '{}') as { [key: string]: Space };
+    const clients = JSON.parse(localStorage.getItem(this.LS_KEYS.clients) || '{}') as { [key: string]: Client };
+
+    // Poblar space.client para espacios ocupados
+    Object.values(spaces).forEach(space => {
+      if (space.occupied && space.clientId && clients[space.clientId]) {
+        space.client = clients[space.clientId];
+      } else {
+        space.client = null;
+      }
+    });
+
+    this.subsuelosSubject.next(subsuelos);
+    this.spacesSubject.next(spaces);
+    this.clientsSubject.next(clients);
+  } catch (error) {
+    console.error('Error al cargar datos de localStorage:', error);
+    this.subsuelosSubject.next([]);
+    this.spacesSubject.next({});
+    this.clientsSubject.next({});
+  }
+}
+
 
   private saveAll(): void {
     try {
@@ -145,7 +198,7 @@ export class AutolavadoService {
   }
 
   // Gestión de espacios
-  private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
+ /* private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
     for (let i = 1; i <= count; i++) {
       const key = this.formatSpaceCode(subsueloId, i);
       spaces[key] = {
@@ -157,8 +210,27 @@ export class AutolavadoService {
         startTime: null
       };
     }
-  }
+  }*/
 
+
+private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
+  for (let i = 1; i <= count; i++) {
+    const key = this.formatSpaceCode(subsueloId, i);
+    spaces[key] = {
+      key,
+      subsueloId,
+      occupied: false,
+      hold: false,
+      clientId: null,
+      startTime: null,
+      client: null,
+      displayName: `Nombre ${i}` // Por defecto 'Nombre'
+    };
+  }
+}
+
+
+  /*
   addSpacesToCurrent(count: number): void {
     const currentSubId = this.currentSubIdSubject.value;
     if (!currentSubId) return;
@@ -186,7 +258,40 @@ export class AutolavadoService {
 
     this.spacesSubject.next({ ...spaces });
     this.saveAll();
+  }*/
+
+
+addSpacesToCurrent(count: number): void {
+  const currentSubId = this.currentSubIdSubject.value;
+  if (!currentSubId) return;
+
+  const spaces = this.spacesSubject.value;
+  const existingKeys = Object.keys(spaces)
+    .filter(k => spaces[k].subsueloId === currentSubId)
+    .map(k => Number(k.split('-')[1]))
+    .sort((a, b) => a - b);
+
+  const start = existingKeys.length ? existingKeys[existingKeys.length - 1] : 0;
+
+  for (let i = 1; i <= count; i++) {
+    const n = start + i;
+    const key = this.formatSpaceCode(currentSubId, n);
+    spaces[key] = {
+      key,
+      subsueloId: currentSubId,
+      occupied: false,
+      hold: false,
+      clientId: null,
+      startTime: null,
+      client: null,
+      displayName: `Nombre ${n}` // Por defecto 'Nombre'
+    };
   }
+
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
 
   setCurrentSubsuelo(id: string): void {
     if (this.subsuelosSubject.value.some(sub => sub.id === id)) {
@@ -194,59 +299,49 @@ export class AutolavadoService {
     }
   }
 
-  // Gestión de clientes
-  saveClient(clientData: ClientData, spaceKey: string): Client {
-    const spaces = this.spacesSubject.value;
-    const clients = this.clientsSubject.value;
-    const space = spaces[spaceKey];
-    if (!space) throw new Error('Espacio no encontrado');
-    if (space.occupied) throw new Error('El espacio ya está ocupado');
 
-    const id = this.generateClientId();
-    const code = id.toUpperCase();
-    const phoneIntl = this.toPhoneAR(clientData.phone);
 
-    const client: Client = {
-      id,
-      code,
-      name: clientData.name.trim(),
-      phoneIntl,
-      phoneRaw: clientData.phone.trim(),
-      vehicle: clientData.vehicle?.trim() || '',
-      plate: clientData.plate?.trim() || '',
-      notes: clientData.notes?.trim() || '',
-      spaceKey,
-      qrText: ''
-    };
+saveClient(clientData: ClientData, spaceKey: string): Client {
+  const spaces = this.spacesSubject.value;
+  const clients = this.clientsSubject.value;
+  const space = spaces[spaceKey];
+  if (!space) throw new Error('Espacio no encontrado');
+  if (space.occupied) throw new Error('El espacio ya está ocupado');
 
-    space.occupied = true;
-    space.clientId = id;
-    space.startTime = Date.now();
-    space.hold = false;
+  const id = this.generateClientId();
+  const code = id.toUpperCase();
+  const phoneIntl = this.toPhoneAR(clientData.phone);
 
-    client.qrText = this.buildQRText(client, space);
-    clients[id] = client;
+  const client: Client = {
+    id,
+    code,
+    name: clientData.name.trim(),
+    phoneIntl,
+    phoneRaw: clientData.phone.trim(),
+    vehicle: clientData.vehicle?.trim() || '',
+    plate: clientData.plate?.trim() || '',
+    notes: clientData.notes?.trim() || '',
+    spaceKey,
+    qrText: ''
+  };
 
-    this.spacesSubject.next({ ...spaces });
-    this.clientsSubject.next({ ...clients });
-    this.saveAll();
+  space.occupied = true;
+  space.clientId = id;
+  space.startTime = Date.now();
+  space.hold = false;
+  space.client = client; // Asignar objeto completo del cliente
 
-    return client;
-  }
+  client.qrText = this.buildQRText(client, space);
+  clients[id] = client;
 
-  releaseSpace0(spaceKey: string): void {
-    const spaces = this.spacesSubject.value;
-    const space = spaces[spaceKey];
-    if (!space) return;
+  this.spacesSubject.next({ ...spaces });
+  this.clientsSubject.next({ ...clients });
+  this.saveAll();
 
-    space.occupied = false;
-    space.clientId = null;
-    space.startTime = null;
-    space.hold = false;
+  return client;
+}
 
-    this.spacesSubject.next({ ...spaces });
-    this.saveAll();
-  }
+
 
 releaseSpace(spaceKey: string): void {
   const spaces = this.spacesSubject.value;
@@ -268,6 +363,9 @@ releaseSpace(spaceKey: string): void {
   this.spacesSubject.next({ ...spaces });
   this.saveAll();
 }
+
+
+
 
 resetData(): void {
   const spaces = this.spacesSubject.value;
@@ -297,9 +395,13 @@ resetData(): void {
     return String(n).padStart(3, '0');
   }
 
-  private formatSpaceCode(subId: string, idx: number): string {
+  private formatSpaceCode0(subId: string, idx: number): string {
     return `${subId}-${this.padNumber(idx)}`;
   }
+
+  private formatSpaceCode(subId: string, idx: number): string {
+  return `${subId}-${String(idx).padStart(3, '0')}`; // Mantiene numérico para agregar, pero permite edición libre
+}
 
   toPhoneAR(input: string): string {
     if (!input) return '';
@@ -363,4 +465,274 @@ resetData(): void {
 
     this.ensureAtLeastOneSubsuelo();
   }
+
+
+    deleteSpace(spaceKey: string): void {
+    const spaces = this.spacesSubject.value;
+    const space = spaces[spaceKey];
+    if (!space) return;
+    if (space.occupied) throw new Error('No se puede eliminar un espacio ocupado');
+
+
+    delete spaces[spaceKey];
+    this.spacesSubject.next({ ...spaces });
+    this.saveAll();
+  }
+
+  deleteSubsuelo(subsueloId: string): void {
+  const subsuelos = this.subsuelosSubject.value;
+  const spaces = this.spacesSubject.value;
+
+  // Verificar si hay espacios ocupados en el subsuelo
+  const hasOccupiedSpaces = Object.values(spaces)
+    .some(space => space.subsueloId === subsueloId && space.occupied);
+  if (hasOccupiedSpaces) {
+    throw new Error('No se puede eliminar el subsuelo porque tiene espacios ocupados');
+  }
+
+  // Verificar que no sea el último subsuelo
+  if (subsuelos.length <= 1) {
+    throw new Error('No se puede eliminar el único subsuelo');
+  }
+
+  // Eliminar todos los espacios del subsuelo
+  Object.keys(spaces)
+    .filter(key => spaces[key].subsueloId === subsueloId)
+    .forEach(key => delete spaces[key]);
+
+  // Eliminar el subsuelo
+  const updatedSubsuelos = subsuelos.filter(sub => sub.id !== subsueloId);
+
+  // Actualizar el subsuelo actual si era el eliminado
+  const currentSubId = this.currentSubIdSubject.value;
+  if (currentSubId === subsueloId) {
+    this.currentSubIdSubject.next(updatedSubsuelos[0]?.id || null);
+  }
+
+  // Actualizar subjects
+  this.subsuelosSubject.next(updatedSubsuelos);
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
+deleteSpacesFromCurrent(count: number): void {
+  const currentSubId = this.currentSubIdSubject.value;
+  if (!currentSubId) return;
+
+  const spaces = this.spacesSubject.value;
+  const subSpaces = Object.keys(spaces)
+    .filter(key => spaces[key].subsueloId === currentSubId)
+    .sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1]));
+
+  // Verificar que haya suficientes espacios para eliminar
+  if (subSpaces.length < count) {
+    throw new Error(`No hay suficientes espacios en ${currentSubId} para eliminar`);
+  }
+
+  /*
+  if(subSpaces.length <=1 ){
+    throw new Error('No se puede eliminar el único espacio del subsuelo')
+  }*/
+
+
+  // Verificar que los últimos 'count' espacios no estén ocupados ni reservados
+  const spacesToDelete = subSpaces.slice(-count);
+  const hasOccupiedOrHeld = spacesToDelete.some(key => spaces[key].occupied || spaces[key].hold);
+  if (hasOccupiedOrHeld) {
+    throw new Error('No se pueden eliminar espacios ocupados o reservados');
+  }
+
+  // Eliminar los espacios
+  spacesToDelete.forEach(key => delete spaces[key]);
+
+  // Actualizar spacesSubject y persistir
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
+editSpace0(spaceKey: string, newKey: string): void {
+  const spaces = this.spacesSubject.value;
+  const space = spaces[spaceKey];
+  if (!space || space.occupied || space.hold) {
+    throw new Error('No se puede editar un espacio ocupado o reservado');
+  }
+
+  if (spaces[newKey]) {
+    throw new Error('La nueva clave ya existe');
+  }
+
+  space.key = newKey;
+  delete spaces[spaceKey];
+  spaces[newKey] = space;
+
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
+editSpace1(spaceKey: string, newKey: string): void {
+  const spaces = this.spacesSubject.value;
+  const space = spaces[spaceKey];
+  if (!space || space.occupied || space.hold) {
+    throw new Error('No se puede editar un espacio ocupado o reservado');
+  }
+
+  if (spaces[newKey]) {
+    throw new Error('La nueva clave ya existe');
+  }
+
+  space.key = newKey;
+  delete spaces[spaceKey];
+  spaces[newKey] = space;
+
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
+editSpace2(oldKey: string, newKey: string, editedSpace: Space | null): void {
+  if (!editedSpace) return;
+
+  const spaces = this.spacesSubject.value;
+  const space = spaces[oldKey];
+  if (!space || space.occupied || space.hold) {
+    throw new Error('No se puede editar un espacio ocupado o reservado');
+  }
+
+  // Validar unicidad solo si la clave cambió
+  if (newKey !== oldKey && spaces[newKey]) {
+    throw new Error('La nueva clave ya existe');
+  }
+
+  // Actualizar clave (si cambió)
+  if (newKey !== oldKey) {
+    space.key = newKey;
+  }
+
+  // Actualizar campos editables (excepto key)
+  space.displayName = editedSpace.displayName || space.displayName;
+  space.subsueloId = editedSpace.subsueloId || space.subsueloId;
+
+  // Actualizar cliente si existe y se editó
+  if (space.client && editedSpace.client) {
+    space.client.name = editedSpace.client.name || space.client.name;
+    space.client.notes = editedSpace.client.notes || space.client.notes;
+    space.client.vehicle = editedSpace.client.vehicle || space.client.vehicle;
+    space.client.plate = editedSpace.client.plate || space.client.plate;
+    space.client.phoneIntl = editedSpace.client.phoneIntl || space.client.phoneIntl;
+    space.client.phoneRaw = editedSpace.client.phoneRaw || space.client.phoneRaw;
+  }
+
+  // Si la clave cambió, mover la entrada
+  if (newKey !== oldKey) {
+    delete spaces[oldKey];
+    spaces[newKey] = space;
+  }
+
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
+editSpace(oldKey: string, newKey: string, editedSpace: Space | null): void {
+  if (!editedSpace) return;
+
+  const spaces = this.spacesSubject.value;
+  const space = spaces[oldKey];
+  if (!space || space.hold) { // Solo bloquear si hold es true (reservado)
+    throw new Error('No se puede editar un espacio reservado');
+  }
+
+  // Validar unicidad solo si la clave cambió
+  if (newKey !== oldKey && spaces[newKey]) {
+    throw new Error('La nueva clave ya existe');
+  }
+
+  // Actualizar clave (si cambió)
+  if (newKey !== oldKey) {
+    space.key = newKey;
+  }
+
+  // Actualizar campos editables (excepto key)
+  space.displayName = editedSpace.displayName || space.displayName;
+  space.subsueloId = editedSpace.subsueloId || space.subsueloId;
+
+  // Actualizar cliente si existe y se editó
+  if (space.client && editedSpace.client) {
+    space.client.name = editedSpace.client.name || space.client.name;
+    space.client.notes = editedSpace.client.notes || space.client.notes;
+    space.client.vehicle = editedSpace.client.vehicle || space.client.vehicle;
+    space.client.plate = editedSpace.client.plate || space.client.plate;
+    space.client.phoneIntl = editedSpace.client.phoneIntl || space.client.phoneIntl;
+    space.client.phoneRaw = editedSpace.client.phoneRaw || space.client.phoneRaw;
+  }
+
+  // Si la clave cambió, mover la entrada
+  if (newKey !== oldKey) {
+    delete spaces[oldKey];
+    spaces[newKey] = space;
+  }
+
+  this.spacesSubject.next({ ...spaces });
+  this.saveAll();
+}
+
+
+transferSpace0(spaceKey: string, newSubsueloId: string): void {
+  const spaces = this.spacesSubject.value;
+  const clients = this.clientsSubject.value;
+  const space = spaces[spaceKey];
+  if (!space) throw new Error('Espacio no encontrado');
+  if (space.occupied) throw new Error('No se puede transferir un espacio ocupado');
+  if (!this.subsuelosSubject.value.some(sub => sub.id === newSubsueloId)) throw new Error('Subsuelo destino no existe');
+
+  // Verificar unicidad de clave en destino
+  if (Object.values(spaces).some(s => s.subsueloId === newSubsueloId && s.key === spaceKey)) {
+    throw new Error('La clave ya existe en el subsuelo destino');
+  }
+
+  // Actualizar subsueloId
+  space.subsueloId = newSubsueloId;
+
+  // Actualizar cliente si existe
+  if (space.client) {
+    space.client.spaceKey = spaceKey; // Mantener spaceKey igual
+  }
+
+  this.spacesSubject.next({ ...spaces });
+  this.clientsSubject.next({ ...clients });
+  this.saveAll();
+}
+
+transferSpace(spaceKey: string, newSubsueloId: string): void {
+  const spaces = this.spacesSubject.value;
+  const clients = this.clientsSubject.value;
+  const space = spaces[spaceKey];
+  if (!space) throw new Error('Espacio no encontrado');
+  if (space.occupied) throw new Error('No se puede transferir un espacio ocupado');
+  if (!this.subsuelosSubject.value.some(sub => sub.id === newSubsueloId)) throw new Error('Subsuelo destino no existe');
+
+  // Verificar unicidad de clave en destino
+  if (Object.values(spaces).some(s => s.subsueloId === newSubsueloId && s.key === spaceKey)) {
+    throw new Error('La clave ya existe en el subsuelo destino');
+  }
+
+  // Verificar coincidencia de displayName en destino
+  const destinationSpaces = Object.values(spaces).filter(s => s.subsueloId === newSubsueloId);
+  const originalDisplayName = space.displayName || space.key;
+  const nameExists = destinationSpaces.some(s => (s.displayName || s.key) === originalDisplayName);
+  if (nameExists) {
+    throw new Error('Ya existe un space con ese nombre. Cambie el nombre para transferirlo.');
+  }
+
+  // Actualizar subsueloId
+  space.subsueloId = newSubsueloId;
+
+  // Actualizar cliente si existe
+  if (space.client) {
+    space.client.spaceKey = spaceKey;
+  }
+
+  this.spacesSubject.next({ ...spaces });
+  this.clientsSubject.next({ ...clients });
+  this.saveAll();
+}
+
 }

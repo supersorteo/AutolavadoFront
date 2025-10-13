@@ -1,8 +1,8 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ElementRef, ViewChild, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 
-import { Subject, takeUntil, combineLatest } from 'rxjs';
+import { Subject, takeUntil, combineLatest, BehaviorSubject } from 'rxjs';
 import { Client, Space, Subsuelo } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
 import { QrService } from '../../services/qr.service';
@@ -19,7 +19,10 @@ declare var bootstrap: any;
 
 export class SpacesComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
-
+  @ViewChild('occQRElm', { static: false }) occQRContainer!: ElementRef<HTMLDivElement>;
+  private searchTermSubject = new BehaviorSubject<string>('');
+  newSpaceKey = '';
+  selectedNewSubsuelo = '';
   subsuelos: Subsuelo[] = [];
   spaces: { [key: string]: Space } = {};
   clients: { [key: string]: Client } = {};
@@ -28,6 +31,11 @@ export class SpacesComponent implements OnInit, OnDestroy {
   filteredSpaces: Space[] = [];
   searchTerm = '';
   addSpacesCount = 5;
+
+  //editedSpace: any = {}; // Nueva propiedad para datos del espacio editado
+  editedSpace: Space | null = null;
+  currentPage: number = 1;
+  itemsPerPage: number = 14;
 
   // Modal data
   selectedSpaceKey = '';
@@ -60,7 +68,8 @@ export class SpacesComponent implements OnInit, OnDestroy {
       this.autolavadoService.subsuelos$,
       this.autolavadoService.spaces$,
       this.autolavadoService.clients$,
-      this.autolavadoService.currentSubId$
+      this.autolavadoService.currentSubId$,
+      this.searchTermSubject
     ]).pipe(takeUntil(this.destroy$))
     .subscribe(([subsuelos, spaces, clients, currentSubId]) => {
       this.subsuelos = subsuelos;
@@ -71,9 +80,16 @@ export class SpacesComponent implements OnInit, OnDestroy {
       this.filterSpaces();
     });
 
+    // Suscripción reactiva a searchTerm
+  this.searchTermSubject.subscribe(() => {
+    this.currentPage = 1;
+    this.filterSpaces();
+  });
+
     // Timer para actualizar tiempos transcurridos
     setInterval(() => {
       // Forzar actualización de la vista cada minuto
+      this.cdr.detectChanges();
     }, 60000);
   }
 
@@ -87,16 +103,41 @@ export class SpacesComponent implements OnInit, OnDestroy {
     this.currentSubTitle = `Espacios — ${sub?.label || this.currentSubId || ''}`;
   }
 
-  private filterSpaces(): void {
-    if (!this.currentSubId) {
-      this.filteredSpaces = [];
-      return;
-    }
 
-    this.filteredSpaces = Object.values(this.spaces)
-      .filter(sp => sp.subsueloId === this.currentSubId)
-      .sort((a, b) => a.key.localeCompare(b.key));
+
+
+
+private filterSpaces(): void {
+  if (!this.currentSubId) {
+    this.filteredSpaces = [];
+    return;
   }
+
+  let allSpaces = Object.values(this.spaces)
+    .filter(sp => sp.subsueloId === this.currentSubId);
+
+  // Filtrar solo por displayName y key si searchTerm existe
+  const currentSearchTerm = this.searchTermSubject.value.trim();
+  if (currentSearchTerm) {
+    const term = currentSearchTerm.toLowerCase();
+    allSpaces = allSpaces.filter(space => {
+      return (
+        (space.displayName || '').toLowerCase().includes(term) ||
+        space.key.toLowerCase().includes(term)
+      );
+    });
+  }
+
+  // Ordenar alfabéticamente por key
+  allSpaces = allSpaces.sort((a, b) => a.key.localeCompare(b.key));
+
+  // Paginación
+  const startIndex = (this.currentPage - 1) * this.itemsPerPage;
+  const endIndex = startIndex + this.itemsPerPage;
+  this.filteredSpaces = allSpaces.slice(startIndex, endIndex);
+}
+
+
 
   onSubsueloChange(): void {
     if (this.currentSubId) {
@@ -112,9 +153,14 @@ export class SpacesComponent implements OnInit, OnDestroy {
     this.autolavadoService.addSpacesToCurrent(this.addSpacesCount);
   }
 
-  onSearch(): void {
-    // El filtrado se maneja en isSearchHit
-  }
+
+
+
+onSearch(): void {
+
+this.searchTermSubject.next(this.searchTerm); // Actualizar subject para reactividad
+  this.currentPage = 1;
+}
 
   isSearchHit(space: Space): boolean {
     if (!this.searchTerm.trim()) return false;
@@ -163,7 +209,7 @@ getFormattedDate(timestamp: number | null | undefined): string {
     }
   }
 
-  saveClient(): void {
+  saveClient0(): void {
     if (this.clientForm.invalid) {
       alert('Por favor completa todos los campos obligatorios.');
       return;
@@ -187,11 +233,72 @@ getFormattedDate(timestamp: number | null | undefined): string {
     }
   }
 
-   openWhatsApp(): void {
+  saveClient1(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
+
+    const space = this.spaces[this.selectedSpaceKey];
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
+    this.qrCaption = `${client.name} — ${client.code}`;
+
+    this.qrService.generateQR('qrcode', client.qrText); // Genera QR escaneable
+    this.showQR = true;
+
+    // Descargar QR automáticamente para adjuntar a WhatsApp
+    setTimeout(() => {
+      this.qrService.downloadQR('qrcode', `${client.code}.png`);
+    }, 500); // Delay para asegurar renderizado
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+saveClient(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
+
+    const space = this.spaces[this.selectedSpaceKey];
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
+    this.qrCaption = `${client.name} — ${client.code}`;
+
+    this.showQR = true; // Setear showQR antes para renderizar div #qrcode
+
+    // Generar QR con delay para asegurar DOM
+    setTimeout(() => {
+      this.qrService.generateQR('qrcode', client.qrText);
+    }, 300); // Aumentar delay a 300ms para renderizado del modal
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+   openWhatsApp0(): void {
     if (this.whatsappLink) {
       window.location.href = this.whatsappLink;
     }
   }
+
+  openWhatsApp(): void {
+  if (this.whatsappLink) {
+    // Descargar QR antes de abrir WhatsApp
+    this.qrService.downloadQR('qrcode', `${this.qrCaption}.png`);
+    window.open(this.whatsappLink, '_blank'); // Abrir en nueva pestaña para attach manual
+  }
+}
 
   toggleQR(): void {
     this.showQR = !this.showQR;
@@ -219,12 +326,62 @@ getFormattedDate(timestamp: number | null | undefined): string {
     }
   }
 
-  toggleOccupiedQR(): void {
+  toggleOccupiedQR0(): void {
     this.showOccupiedQR = !this.showOccupiedQR;
     if (this.showOccupiedQR && this.selectedClient) {
       this.qrService.generateQR('occQRElm', this.selectedClient.qrText);
     }
   }
+
+ toggleOccupiedQR1(): void {
+  this.showOccupiedQR = !this.showOccupiedQR;
+  if (this.showOccupiedQR && this.selectedClient) {
+    setTimeout(() => {
+      this.qrService.generateQR('occQRElm', this.selectedClient!.qrText); // Non-null assertion para TypeScript
+    }, 300);
+  }
+}
+
+toggleOccupiedQR2(): void {
+  this.showOccupiedQR = !this.showOccupiedQR;
+  if (this.showOccupiedQR && this.selectedClient) {
+    console.log('toggleOccupiedQR: Generando QR para', this.selectedClient.qrText); // Log para depurar
+    setTimeout(() => {
+      const container = document.getElementById('occQRElm');
+      if (container) {
+        this.qrService.generateQR('occQRElm', this.selectedClient!.qrText);
+        console.log('QR generado para occupied modal');
+      } else {
+        console.error('Container #occQRElm no encontrado');
+      }
+    }, 500); // Aumentar delay para renderizado del modal
+  }
+}
+
+toggleOccupiedQR(): void {
+  this.showOccupiedQR = !this.showOccupiedQR;
+  if (this.showOccupiedQR && this.selectedClient) {
+    console.log('toggleOccupiedQR: Generando QR para', this.selectedClient.qrText);
+    // Esperar renderizado completo del modal
+    setTimeout(() => {
+      const container = document.getElementById('occQRElm');
+      if (container) {
+        this.qrService.generateQR('occQRElm', this.selectedClient!.qrText);
+        console.log('QR generado para occupied modal');
+      } else {
+        console.error('Container #occQRElm no encontrado - Modal no renderizado aún');
+        // Reintento si no está listo
+        setTimeout(() => {
+          const retryContainer = document.getElementById('occQRElm');
+          if (retryContainer) {
+            this.qrService.generateQR('occQRElm', this.selectedClient!.qrText);
+            console.log('QR generado en reintento');
+          }
+        }, 200);
+      }
+    }, 600); // Aumentar delay para modal Bootstrap
+  }
+}
 
   downloadQR(): void {
     this.qrService.downloadQR('qrcode', `cliente_${this.selectedSpaceKey}.png`);
@@ -253,26 +410,164 @@ getFormattedDate(timestamp: number | null | undefined): string {
     }
   }
 
-resetData0(): void {
-    if (confirm('Esto borrará todos los datos de clientes.')) {
-      localStorage.removeItem('alw_clients');
-      Object.values(this.spaces).forEach(space => {
-        space.occupied = false;
-        space.clientId = null;
-        space.startTime = null;
-      });
-      this.clients = {};
-      localStorage.setItem('alw_spaces', JSON.stringify(this.spaces));
-      this.filterSpaces();
-      this.cdr.detectChanges();
-    }
-  }
+
 
   resetData(): void {
   if (confirm('Esto borrará todos los datos de clientes.')) {
     this.autolavadoService.resetData();
     this.filterSpaces();
     this.cdr.detectChanges();
+  }
+}
+
+
+ deleteSpace(): void {
+    if (confirm(`¿Eliminar espacio ${this.selectedSpaceKey}?`)) {
+      try {
+        this.autolavadoService.deleteSpace(this.selectedSpaceKey);
+        this.hideModal('clientModal');
+      } catch (error) {
+        alert('Error al eliminar espacio: ' + error);
+      }
+    }
+  }
+
+
+
+
+deleteSubsuelo(): void {
+  if (this.currentSubId && confirm(`¿Eliminar subsuelo ${this.currentSubId}?`)) {
+    try {
+      this.autolavadoService.deleteSubsuelo(this.currentSubId);
+    } catch (error) {
+      alert('Error al eliminar subsuelo: ' + error);
+    }
+  }
+}
+
+deleteSpaces(): void {
+  if (this.currentSubId && confirm(`¿Eliminar ${this.addSpacesCount} espacios del subsuelo ${this.currentSubId}?`)) {
+    try {
+      this.autolavadoService.deleteSpacesFromCurrent(this.addSpacesCount);
+      this.filterSpaces();
+      this.cdr.detectChanges();
+      this.currentPage = 1;
+    } catch (error) {
+      alert('Error al eliminar espacios: ' + error);
+    }
+  }
+}
+
+
+
+get totalPages(): number {
+  if (!this.currentSubId) return 1;
+  const totalSpaces = Object.values(this.spaces)
+    .filter(sp => sp.subsueloId === this.currentSubId)
+    .length;
+  return Math.ceil(totalSpaces / this.itemsPerPage);
+}
+
+goToPage(page: number): void {
+  if (page >= 1 && page <= this.totalPages) {
+    this.currentPage = page;
+    this.filterSpaces();
+    this.cdr.detectChanges();
+  }
+}
+
+nextPage(): void {
+  this.goToPage(this.currentPage + 1);
+}
+
+prevPage(): void {
+  this.goToPage(this.currentPage - 1);
+}
+
+
+
+
+
+editSpace(space: Space): void {
+  this.selectedSpaceKey = space.key;
+  this.editedSpace = {
+    ...space,
+    client: space.client ? { ...space.client } : null // Copia completa del espacio y cliente
+  };
+  this.newSpaceKey = space.key; // Prellenar clave (no editable)
+
+  this.showModal('editSpaceModal');
+  console.log('Datos del espacio antes de editar:', this.editedSpace); // Logging para depurar
+}
+
+/*
+confirmEditSpace0(): void {
+  if (this.newSpaceKey && this.newSpaceKey !== this.selectedSpaceKey) {
+    // Validar patrón: SUBN-XXX (XXX alfanumérico, mínimo 1 carácter)
+    const pattern = /^SUB\d+-[A-Za-z0-9]+$/;
+    if (!pattern.test(this.newSpaceKey)) {
+      alert('La clave debe seguir el patrón SUBN-XXX (donde XXX son letras o números).');
+      return;
+    }
+    try {
+      this.autolavadoService.editSpace(this.selectedSpaceKey, this.newSpaceKey);
+      this.filterSpaces();
+      this.cdr.detectChanges();
+      alert('Espacio editado exitosamente!');
+    } catch (error) {
+      alert('Error al editar espacio: ' + error);
+    }
+  }
+  this.hideModal('editSpaceModal');
+}*/
+
+confirmEditSpace(): void {
+  console.log('confirmEditSpace ejecutado', { newSpaceKey: this.newSpaceKey, selectedSpaceKey: this.selectedSpaceKey, editedSpace: this.editedSpace });
+
+  if (this.editedSpace) { // Siempre intentar guardar si hay datos
+    let hasError = false;
+    if (this.newSpaceKey !== this.selectedSpaceKey) { // Validar solo si la clave cambió
+      const pattern = /^SUB\d+-[A-Za-z0-9]+$/;
+      if (!pattern.test(this.newSpaceKey)) {
+        console.log('Patrón inválido');
+        alert('La clave debe seguir el patrón SUBN-XXX (donde XXX son letras o números).');
+        hasError = true;
+      }
+    }
+    if (!hasError) {
+      try {
+        console.log('Llamando al servicio editSpace');
+        this.autolavadoService.editSpace(this.selectedSpaceKey, this.newSpaceKey, this.editedSpace);
+        console.log('Servicio exitoso, actualizando vista');
+        this.filterSpaces();
+        this.cdr.detectChanges();
+        console.log('Vista actualizada, alert mostrado');
+        alert('Espacio editado exitosamente!');
+      } catch (error) {
+        console.error('Error en confirmEditSpace:', error);
+        alert('Error al editar espacio: ' + error);
+      }
+    }
+  } else {
+    console.log('No hay datos para editar');
+  }
+  this.hideModal('editSpaceModal');
+}
+
+
+transferSpace(): void {
+  if (confirm(`¿Transferir espacio ${this.selectedSpaceKey} a otro subsuelo?`)) {
+    const newSubsuelo = prompt('Ingresa el ID del subsuelo destino (ej. SUB2):', this.subsuelos[0]?.id || '');
+    if (newSubsuelo && newSubsuelo !== this.selectedSpace?.subsueloId) {
+      try {
+        this.autolavadoService.transferSpace(this.selectedSpaceKey, newSubsuelo);
+        this.filterSpaces();
+        this.cdr.detectChanges();
+        alert('Espacio transferido exitosamente!');
+      } catch (error) {
+        alert('Error al transferir espacio: ' + error);
+      }
+    }
   }
 }
 

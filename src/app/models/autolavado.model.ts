@@ -9,7 +9,9 @@ export interface Space {
   occupied: boolean;
   hold: boolean;
   clientId: string | null;
+  client: Client | null;
   startTime: number | null;
+  displayName?: string;
 }
 
 export interface Client {
