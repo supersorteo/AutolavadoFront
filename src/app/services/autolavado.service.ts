@@ -182,7 +182,7 @@ loadAll(): void {
     }
   }
 
-  addSubsuelo(): void {
+  addSubsuelo0(): void {
     const subsuelos = this.subsuelosSubject.value;
     const nextNum = subsuelos.length + 1;
     const id = `SUB${nextNum}`;
@@ -196,6 +196,35 @@ loadAll(): void {
     this.currentSubIdSubject.next(id);
     this.saveAll();
   }
+
+
+  addSubsuelo(): void {
+  const subsuelos = this.subsuelosSubject.value;
+  // Calcular máximo ID existente
+  let maxNum = 0;
+  subsuelos.forEach(sub => {
+    const numMatch = sub.id.match(/^SUB(\d+)$/);
+    if (numMatch) {
+      const num = parseInt(numMatch[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+  const nextNum = maxNum + 1;
+  const id = `SUB${nextNum}`;
+  const newSub: Subsuelo = { id, label: `Subsuelo ${nextNum}` };
+  const spaces = this.spacesSubject.value;
+
+  this.createSpacesForSubsuelo(id, 5, spaces);
+
+  this.subsuelosSubject.next([...subsuelos, newSub]);
+  this.spacesSubject.next({ ...spaces });
+  this.currentSubIdSubject.next(id);
+  this.saveAll();
+
+  // Logging para depurar
+  console.log('Nuevo subsuelo creado:', newSub);
+  console.log('Subsuelos actuales:', this.subsuelosSubject.value);
+}
 
   // Gestión de espacios
  /* private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
@@ -260,6 +289,17 @@ private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [ke
     this.saveAll();
   }*/
 
+
+
+updateSubsuelo(id: string, newLabel: string): void {
+  const subsuelos = this.subsuelosSubject.value;
+  const index = subsuelos.findIndex(sub => sub.id === id);
+  if (index === -1) throw new Error('Subsuelo no encontrado');
+
+  subsuelos[index].label = newLabel.trim();
+  this.subsuelosSubject.next([...subsuelos]);
+  this.saveAll();
+}
 
 addSpacesToCurrent(count: number): void {
   const currentSubId = this.currentSubIdSubject.value;

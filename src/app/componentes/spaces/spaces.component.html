@@ -50,7 +50,15 @@
     <div class="card mb-3">
       <div class="card-body">
         <div class="d-flex align-items-center justify-content-between mb-2">
-          <h2 class="h5 m-0">{{currentSubTitle}}</h2>
+          <!--h2-- class="h5 m-0">{{currentSubTitle}}</!--h2-->
+        <h2 class="h5 m-0" (click)="editSubsuelo()"
+    style="cursor: pointer; user-select: none;"
+    data-bs-toggle="tooltip"
+    data-bs-placement="top"
+    title="Desea editar el subsuelo?">
+  {{currentSubTitle}}
+</h2>
+
           <div class="tiny">Click en un espacio libre para cargar cliente. Click en ocupado para ver/gestionar.</div>
         </div>
         <hr>
@@ -349,6 +357,27 @@
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-primary flex-fill" (click)="confirmEditSpace()">Guardar Cambios</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="editSubsueloModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered">
+    <div class="modal-content modal-dark">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar Subsuelo</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" *ngIf="currentSubId">
+        <div class="mb-3">
+          <label class="form-label">Nombre del Subsuelo</label>
+          <input type="text" class="form-control form-control-dark" [(ngModel)]="editedSubsueloLabel" placeholder="Ej: Subsuelo Premium">
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary flex-fill" (click)="confirmEditSubsuelo()">Guardar Cambios</button>
           <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
         </div>
       </div>

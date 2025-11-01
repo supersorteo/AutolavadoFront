@@ -47,7 +47,7 @@ export class SpacesComponent implements OnInit, OnDestroy {
   whatsappLink = '';
 
   clientForm: FormGroup;
-
+  editedSubsueloLabel = '';
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
@@ -91,6 +91,11 @@ export class SpacesComponent implements OnInit, OnDestroy {
       // Forzar actualización de la vista cada minuto
       this.cdr.detectChanges();
     }, 60000);
+
+
+
+
+
   }
 
   ngOnDestroy(): void {
@@ -148,6 +153,31 @@ private filterSpaces(): void {
   addSubsuelo(): void {
     this.autolavadoService.addSubsuelo();
   }
+
+
+
+editSubsuelo(): void {
+  if (this.currentSubId) {
+    const currentSub = this.subsuelos.find(sub => sub.id === this.currentSubId);
+    this.editedSubsueloLabel = currentSub?.label || '';
+    this.showModal('editSubsueloModal');
+  }
+}
+
+confirmEditSubsuelo(): void {
+  if (this.editedSubsueloLabel.trim() && this.currentSubId) {
+    try {
+      this.autolavadoService.updateSubsuelo(this.currentSubId, this.editedSubsueloLabel);
+      this.filterSpaces(); // Actualizar vista
+      this.cdr.detectChanges();
+      alert('Subsuelo actualizado exitosamente!');
+    } catch (error) {
+      alert('Error al actualizar subsuelo: ' + error);
+    }
+  }
+  this.hideModal('editSubsueloModal');
+}
+
 
   addSpaces(): void {
     this.autolavadoService.addSpacesToCurrent(this.addSpacesCount);
