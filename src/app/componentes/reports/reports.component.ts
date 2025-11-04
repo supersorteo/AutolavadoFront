@@ -208,7 +208,7 @@ export class ReportsComponent implements OnInit, OnDestroy {
 
   generateReport0(): void {
     const report = `
-REPORTE AUTOLAVADO - ${new Date().toLocaleString()}
+REPORTE EXELLSSIOR - ${new Date().toLocaleString()}
 ===================================================
 
 RESUMEN GENERAL:
@@ -237,7 +237,7 @@ ${this.filteredClients.map(client =>
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `reporte_autolavado_${new Date().toISOString().split('T')[0]}.txt`;
+    link.download = `reporte_exellssior_${new Date().toISOString().split('T')[0]}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
