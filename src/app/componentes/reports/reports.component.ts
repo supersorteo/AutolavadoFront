@@ -199,7 +199,7 @@ export class ReportsComponent implements OnInit, OnDestroy {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `autolavado_backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `exellssior_backup_${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -251,7 +251,7 @@ generateReport(): void {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reporte Autolavado - ${new Date().toLocaleString()}</title>
+  <title>Reporte Exellsior - ${new Date().toLocaleString()}</title>
   <style>
     body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
     h1 { color: #0ea5e9; text-align: center; }
@@ -272,7 +272,7 @@ generateReport(): void {
   </style>
 </head>
 <body>
-  <h1>Reporte Autolavado - ${new Date().toLocaleString()}</h1>
+  <h1>Reporte Exellssior - ${new Date().toLocaleString()}</h1>
 
   <div class="section">
     <h2>Resumen General</h2>
@@ -388,7 +388,7 @@ generateReport(): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `reporte_autolavado_${new Date().toISOString().split('T')[0]}.html`;
+  link.download = `reporte_exellssior_${new Date().toISOString().split('T')[0]}.html`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
