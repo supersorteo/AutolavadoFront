@@ -1,6 +1,7 @@
+import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, combineLatest } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { BehaviorSubject, combineLatest, Observable, of } from 'rxjs';
+import { catchError, map } from 'rxjs/operators';
 
 // Interfaces
 export interface Subsuelo {
@@ -57,6 +58,8 @@ export class AutolavadoService {
   private currentSubIdSubject = new BehaviorSubject<string | null>(null);
   private searchTermSubject = new BehaviorSubject<string>('');
 
+  API_BASE = 'http://localhost:8080/api'
+
   // Observables públicos
   public subsuelos$ = this.subsuelosSubject.asObservable();
   public spaces$ = this.spacesSubject.asObservable();
@@ -80,52 +83,12 @@ export class AutolavadoService {
     })
   );
 
-  constructor() {
+  constructor(private http: HttpClient) {
     this.loadAll();
     this.ensureAtLeastOneSubsuelo();
   }
 
-  // Gestión de almacenamiento
-  private loadAll0(): void {
-    try {
-      const subsuelos = JSON.parse(localStorage.getItem(this.LS_KEYS.subs) || '[]') as Subsuelo[];
-      const spaces = JSON.parse(localStorage.getItem(this.LS_KEYS.spaces) || '{}') as { [key: string]: Space };
-      const clients = JSON.parse(localStorage.getItem(this.LS_KEYS.clients) || '{}') as { [key: string]: Client };
 
-      this.subsuelosSubject.next(subsuelos);
-      this.spacesSubject.next(spaces);
-      this.clientsSubject.next(clients);
-    } catch (error) {
-      console.error('Error al cargar datos de localStorage:', error);
-      this.subsuelosSubject.next([]);
-      this.spacesSubject.next({});
-      this.clientsSubject.next({});
-    }
-  }
-
-  loadAll1(): void {
-  try {
-    const subsuelos = JSON.parse(localStorage.getItem(this.LS_KEYS.subs) || '[]') as Subsuelo[];
-    const spaces = JSON.parse(localStorage.getItem(this.LS_KEYS.spaces) || '{}') as { [key: string]: Space };
-    const clients = JSON.parse(localStorage.getItem(this.LS_KEYS.clients) || '{}') as { [key: string]: Client };
-
-    // Resolver clientes completos para espacios ocupados
-    Object.values(spaces).forEach(space => {
-      if (space.occupied && space.clientId && clients[space.clientId]) {
-        space.client = clients[space.clientId];
-      }
-    });
-
-    this.subsuelosSubject.next(subsuelos);
-    this.spacesSubject.next(spaces);
-    this.clientsSubject.next(clients);
-  } catch (error) {
-    console.error('Error al cargar datos de localStorage:', error);
-    this.subsuelosSubject.next([]);
-    this.spacesSubject.next({});
-    this.clientsSubject.next({});
-  }
-}
 
 loadAll(): void {
   try {
@@ -152,6 +115,8 @@ loadAll(): void {
     this.clientsSubject.next({});
   }
 }
+
+
 
 
   private saveAll(): void {
@@ -182,20 +147,7 @@ loadAll(): void {
     }
   }
 
-  addSubsuelo0(): void {
-    const subsuelos = this.subsuelosSubject.value;
-    const nextNum = subsuelos.length + 1;
-    const id = `SUB${nextNum}`;
-    const newSub: Subsuelo = { id, label: `Subsuelo ${nextNum}` };
-    const spaces = this.spacesSubject.value;
 
-    this.createSpacesForSubsuelo(id, 5, spaces);
-
-    this.subsuelosSubject.next([...subsuelos, newSub]);
-    this.spacesSubject.next({ ...spaces });
-    this.currentSubIdSubject.next(id);
-    this.saveAll();
-  }
 
 
   addSubsuelo(): void {
@@ -226,20 +178,6 @@ loadAll(): void {
   console.log('Subsuelos actuales:', this.subsuelosSubject.value);
 }
 
-  // Gestión de espacios
- /* private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
-    for (let i = 1; i <= count; i++) {
-      const key = this.formatSpaceCode(subsueloId, i);
-      spaces[key] = {
-        key,
-        subsueloId,
-        occupied: false,
-        hold: false,
-        clientId: null,
-        startTime: null
-      };
-    }
-  }*/
 
 
 private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
@@ -258,36 +196,6 @@ private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [ke
   }
 }
 
-
-  /*
-  addSpacesToCurrent(count: number): void {
-    const currentSubId = this.currentSubIdSubject.value;
-    if (!currentSubId) return;
-
-    const spaces = this.spacesSubject.value;
-    const existingKeys = Object.keys(spaces)
-      .filter(k => spaces[k].subsueloId === currentSubId)
-      .map(k => Number(k.split('-')[1]))
-      .sort((a, b) => a - b);
-
-    const start = existingKeys.length ? existingKeys[existingKeys.length - 1] : 0;
-
-    for (let i = 1; i <= count; i++) {
-      const n = start + i;
-      const key = this.formatSpaceCode(currentSubId, n);
-      spaces[key] = {
-        key,
-        subsueloId: currentSubId,
-        occupied: false,
-        hold: false,
-        clientId: null,
-        startTime: null
-      };
-    }
-
-    this.spacesSubject.next({ ...spaces });
-    this.saveAll();
-  }*/
 
 
 
@@ -382,6 +290,92 @@ saveClient(clientData: ClientData, spaceKey: string): Client {
 }
 
 
+saveClient0(clientData: ClientData, spaceKey: string): Observable<Client> {
+  const client = {
+    ...clientData,
+    spaceKey
+  };
+  console.log('Guardando cliente en backend:', client);
+
+  return this.http.post<Client>(`${this.API_BASE}/clients`, client).pipe(
+    map(savedClient => {
+      console.log('Cliente guardado en backend:', savedClient);
+      // Actualizar espacio localmente
+      const spaces = this.spacesSubject.value;
+      const space = spaces[spaceKey];
+      if (space) {
+        space.occupied = true;
+        space.clientId = savedClient.id;
+        space.startTime = Date.now();
+        space.hold = false;
+        space.client = savedClient;
+        this.spacesSubject.next({ ...spaces });
+        this.saveToLocalStorage(this.LS_KEYS.spaces, spaces);
+      }
+      // Sync local
+      const clients = this.clientsSubject.value;
+      clients[savedClient.id] = savedClient;
+      this.clientsSubject.next({ ...clients });
+      this.saveToLocalStorage(this.LS_KEYS.clients, clients);
+      return savedClient;
+    }),
+    catchError(error => {
+      console.error('Error saving client to backend, fallback local', error);
+      // Fallback local
+      const localClient = this.saveClientLocal(clientData, spaceKey);
+      return of(localClient);
+    })
+  );
+}
+
+private saveClientLocal(clientData: ClientData, spaceKey: string): Client {
+  const spaces = this.spacesSubject.value;
+  const clients = this.clientsSubject.value;
+  const space = spaces[spaceKey];
+  if (!space) throw new Error('Espacio no encontrado');
+  if (space.occupied) throw new Error('El espacio ya está ocupado');
+
+  const id = this.generateClientId();
+  const code = id.toUpperCase();
+  const phoneIntl = this.toPhoneAR(clientData.phone);
+
+  const client: Client = {
+    id,
+    code,
+    name: clientData.name.trim(),
+    phoneIntl: phoneIntl,
+    phoneRaw: clientData.phone.trim(),
+    vehicle: clientData.vehicle?.trim() || '',
+    plate: clientData.plate?.trim() || '',
+    notes: clientData.notes?.trim() || '',
+    spaceKey,
+    qrText: ''
+  };
+
+  space.occupied = true;
+  space.clientId = id;
+  space.startTime = Date.now(); // Corrección: startTime, no startId
+  space.hold = false;
+  space.client = client;
+
+  client.qrText = this.buildQRText(client, space);
+  clients[id] = client;
+
+  this.spacesSubject.next({ ...spaces });
+  this.clientsSubject.next({ ...clients });
+  this.saveAll();
+  return client;
+}
+
+private saveToLocalStorage(key: string, data: any): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+    console.log(`Sync local for ${key}`);
+  } catch (error) {
+    console.error('Error saving to localStorage', error);
+  }
+}
+
 
 releaseSpace(spaceKey: string): void {
   const spaces = this.spacesSubject.value;
@@ -443,20 +437,7 @@ resetData(): void {
   return `${subId}-${String(idx).padStart(3, '0')}`; // Mantiene numérico para agregar, pero permite edición libre
 }
 
-  toPhoneAR(input: string): string {
-    if (!input) return '';
-    let s = input.replace(/[^0-9+]/g, '');
-    s = s.replace(/^\+/, '');
-    if (s.startsWith('54')) s = s.slice(2);
-    s = s.replace(/^0+/, '');
-    s = s.replace(/^15/, '');
-    const result = `54${s}`;
-    // Validar longitud (por ejemplo, +54 y 10 dígitos para móvil)
-    if (result.length < 12 || result.length > 13) {
-      throw new Error('Número de teléfono inválido');
-    }
-    return result;
-  }
+
 
   elapsedFrom(ts: number | null | undefined): string {
     if (!ts) return '';
@@ -485,12 +466,109 @@ resetData(): void {
     });
   }
 
-  buildWhatsAppLink(client: Client, space: Space): string {
+  buildWhatsAppLink1(client: Client, space: Space): string {
     const phone = client.phoneIntl;
     const msg = `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en el autolavado:\n• Código cliente: ${client.code} 🔑\n• Espacio: ${space.key} (${space.subsueloId}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
     const text = encodeURIComponent(msg);
     return `whatsapp://send?phone=${phone}&text=${text}`;
   }
+
+  buildWhatsAppLink(client: Client, space: Space): string {
+  const phone = client.phoneIntl; // Debe estar en formato 549XXXXXXXXXX
+  const msg = `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en el autolavado:\n• Código cliente: ${client.code} 🔑\n• Espacio: ${space.key} (${space.subsueloId}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
+  const text = encodeURIComponent(msg);
+
+  // Usar wa.me en lugar de whatsapp://send
+  return `https://wa.me/${phone}?text=${text}`;
+}
+
+
+// En autolavado.service.ts
+buildWhatsAppLink0(client: Client, space: Space): string {
+  // Limpiar el número: solo dígitos
+  const cleanPhone = client.phoneIntl.replace(/\D/g, '');
+
+  // Verificar que tenga el formato correcto (54 + código de área + número)
+  if (!cleanPhone.startsWith('54')) {
+    console.error('Número sin código de país correcto:', cleanPhone);
+  }
+
+  // Mensaje sin emojis para mayor compatibilidad
+  const msg = `Hola ${client.name}!
+
+Datos de tu estadia en el autolavado:
+- Codigo cliente: ${client.code}
+- Espacio: ${space.key} (${space.subsueloId})
+- Ingreso: ${new Date(space.startTime!).toLocaleString('es-AR')}
+
+Mostra este QR al personal.`;
+
+  // Codificar mensaje
+  const text = encodeURIComponent(msg);
+
+  // Usar wa.me que funciona en web y móvil
+  return `https://wa.me/${cleanPhone}?text=${text}`;
+}
+
+// Método mejorado para formatear teléfono argentino
+toPhoneAR0(phone: string): string {
+  // Remover todos los caracteres no numéricos
+  const digits = phone.replace(/\D/g, '');
+
+  // Remover el 0 y 15 si están al inicio
+  let cleaned = digits;
+  if (cleaned.startsWith('0')) {
+    cleaned = cleaned.substring(1);
+  }
+  if (cleaned.startsWith('15')) {
+    cleaned = cleaned.substring(2);
+  }
+
+  // Agregar código de país 54
+  return `54${cleaned}`;
+}
+
+  toPhoneAR1(input: string): string {
+    if (!input) return '';
+    let s = input.replace(/[^0-9+]/g, '');
+    s = s.replace(/^\+/, '');
+    if (s.startsWith('54')) s = s.slice(2);
+    s = s.replace(/^0+/, '');
+    s = s.replace(/^15/, '');
+    const result = `54${s}`;
+    // Validar longitud (por ejemplo, +54 y 10 dígitos para móvil)
+    if (result.length < 12 || result.length > 13) {
+      throw new Error('Número de teléfono inválido');
+    }
+    return result;
+  }
+
+  toPhoneAR(input: string): string {
+  if (!input) return '';
+
+  // Eliminar cualquier carácter no numérico
+  let s = input.replace(/[^0-9]/g, '');
+
+  // Quitar prefijos comunes
+  if (s.startsWith('54')) s = s.slice(2); // quitar código país si está
+  if (s.startsWith('0')) s = s.replace(/^0+/, ''); // quitar ceros iniciales
+  if (s.startsWith('15')) s = s.slice(2); // quitar 15 si está
+
+  // Asegurar que el número comience con 9 (móvil)
+  if (!s.startsWith('9')) {
+    s = '9' + s;
+  }
+
+  const result = `54${s}`;
+
+  // Validar longitud (debería ser 13 dígitos: 54 + 9 + 10)
+  if (result.length !== 13) {
+    throw new Error('Número de teléfono inválido para WhatsApp');
+  }
+
+  return result;
+}
+
 
   clearAllData(): void {
     localStorage.removeItem(this.LS_KEYS.subs);
@@ -590,86 +668,7 @@ deleteSpacesFromCurrent(count: number): void {
   this.saveAll();
 }
 
-editSpace0(spaceKey: string, newKey: string): void {
-  const spaces = this.spacesSubject.value;
-  const space = spaces[spaceKey];
-  if (!space || space.occupied || space.hold) {
-    throw new Error('No se puede editar un espacio ocupado o reservado');
-  }
 
-  if (spaces[newKey]) {
-    throw new Error('La nueva clave ya existe');
-  }
-
-  space.key = newKey;
-  delete spaces[spaceKey];
-  spaces[newKey] = space;
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
-
-editSpace1(spaceKey: string, newKey: string): void {
-  const spaces = this.spacesSubject.value;
-  const space = spaces[spaceKey];
-  if (!space || space.occupied || space.hold) {
-    throw new Error('No se puede editar un espacio ocupado o reservado');
-  }
-
-  if (spaces[newKey]) {
-    throw new Error('La nueva clave ya existe');
-  }
-
-  space.key = newKey;
-  delete spaces[spaceKey];
-  spaces[newKey] = space;
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
-
-editSpace2(oldKey: string, newKey: string, editedSpace: Space | null): void {
-  if (!editedSpace) return;
-
-  const spaces = this.spacesSubject.value;
-  const space = spaces[oldKey];
-  if (!space || space.occupied || space.hold) {
-    throw new Error('No se puede editar un espacio ocupado o reservado');
-  }
-
-  // Validar unicidad solo si la clave cambió
-  if (newKey !== oldKey && spaces[newKey]) {
-    throw new Error('La nueva clave ya existe');
-  }
-
-  // Actualizar clave (si cambió)
-  if (newKey !== oldKey) {
-    space.key = newKey;
-  }
-
-  // Actualizar campos editables (excepto key)
-  space.displayName = editedSpace.displayName || space.displayName;
-  space.subsueloId = editedSpace.subsueloId || space.subsueloId;
-
-  // Actualizar cliente si existe y se editó
-  if (space.client && editedSpace.client) {
-    space.client.name = editedSpace.client.name || space.client.name;
-    space.client.notes = editedSpace.client.notes || space.client.notes;
-    space.client.vehicle = editedSpace.client.vehicle || space.client.vehicle;
-    space.client.plate = editedSpace.client.plate || space.client.plate;
-    space.client.phoneIntl = editedSpace.client.phoneIntl || space.client.phoneIntl;
-    space.client.phoneRaw = editedSpace.client.phoneRaw || space.client.phoneRaw;
-  }
-
-  // Si la clave cambió, mover la entrada
-  if (newKey !== oldKey) {
-    delete spaces[oldKey];
-    spaces[newKey] = space;
-  }
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
 
 editSpace(oldKey: string, newKey: string, editedSpace: Space | null): void {
   if (!editedSpace) return;
@@ -714,32 +713,6 @@ editSpace(oldKey: string, newKey: string, editedSpace: Space | null): void {
   this.saveAll();
 }
 
-
-transferSpace0(spaceKey: string, newSubsueloId: string): void {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-  if (!space) throw new Error('Espacio no encontrado');
-  if (space.occupied) throw new Error('No se puede transferir un espacio ocupado');
-  if (!this.subsuelosSubject.value.some(sub => sub.id === newSubsueloId)) throw new Error('Subsuelo destino no existe');
-
-  // Verificar unicidad de clave en destino
-  if (Object.values(spaces).some(s => s.subsueloId === newSubsueloId && s.key === spaceKey)) {
-    throw new Error('La clave ya existe en el subsuelo destino');
-  }
-
-  // Actualizar subsueloId
-  space.subsueloId = newSubsueloId;
-
-  // Actualizar cliente si existe
-  if (space.client) {
-    space.client.spaceKey = spaceKey; // Mantener spaceKey igual
-  }
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({ ...clients });
-  this.saveAll();
-}
 
 transferSpace(spaceKey: string, newSubsueloId: string): void {
   const spaces = this.spacesSubject.value;

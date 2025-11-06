@@ -1,30 +1,29 @@
   <div class="row g-3 align-items-end mb-3">
 
-      <!--div-- class="d-flex align-items-center justify-content-between mb-3">
+      <div class="d-flex align-items-center justify-content-between mb-3">
 
           <img src="../assets/logo/logo_autolvadao.jpg" alt="Logo Autolavado" class="img-fluid" style="max-height: 50px;">
       <div>
         <button  class="btn btn-outline-light btn-sm" (click)="resetData()" title="Borrar todo (demo)">Limpiar datos</button>
       </div>
-    </!--div-->
+    </div>
 
 
-<!-- Portada estilo perfil -->
-<div class="position-relative mb-5">
-  <!-- Imagen de portada -->
+<!--div-- class="position-relative mb-5">
+
   <img src="../assets/portada/EXELLSSIOR.JPG" alt="Portada Autolavado"
        class="img-fluid w-100 rounded" style="max-height: 300px; object-fit: cover;">
 
-  <!-- Logo estilo perfil superpuesto -->
+
   <img src="../assets/logo/logo_autolvadao.jpg" alt="Logo Autolavado"
        class="position-absolute rounded-circle border border-white"
        style="width: 100px; height: 100px; bottom: -50px; left: 30px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
 
-  <!-- Texto de autoría -->
+
   <div class="position-absolute" style="bottom: 10px; right: 20px;">
       <button  class="btn btn-outline-light btn-sm" (click)="resetData()" title="Borrar todo (demo)">Limpiar datos</button>
   </div>
-</div>
+</!--div-->
 
 <!-- Espaciador para que el logo no se superponga con el contenido -->
 <!--div-- style="height: 60px;"></!--div-->
@@ -157,12 +156,27 @@
                 <label class="form-label">Nombre y apellido *</label>
                 <input formControlName="name" class="form-control form-control-dark" required />
               </div>
-              <div class="col-md-6">
+              <!--div-- class="col-md-6">
                 <label class="form-label">Teléfono (Argentina) *</label>
                 <input formControlName="phone" class="form-control form-control-dark"
                        placeholder="Ej: 11 1234 5678" required />
                 <div class="form-text">Se formatea a +54 (sin 0 ni 15).</div>
-              </div>
+              </!--div-->
+              <div class="col-md-6">
+  <label class="form-label">Teléfono (Argentina) *</label>
+  <input formControlName="phone"
+         class="form-control form-control-dark"
+         placeholder="Ej: 1123456789 (sin 0 ni 15)"
+         pattern="[0-9]{8,10}"
+         required />
+  <div class="form-text">
+    Solo números, sin 0 ni 15. Ej: 1123456789
+  </div>
+  <div *ngIf="clientForm.get('phone')?.invalid && clientForm.get('phone')?.touched"
+       class="text-danger small">
+    Ingresá un teléfono válido (8-10 dígitos)
+  </div>
+</div>
               <div class="col-md-6">
                 <label class="form-label">Tipo de vehículo (opcional)</label>
                 <input formControlName="vehicle" class="form-control form-control-dark"

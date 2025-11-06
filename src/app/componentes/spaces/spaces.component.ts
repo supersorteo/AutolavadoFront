@@ -56,7 +56,8 @@ export class SpacesComponent implements OnInit, OnDestroy {
   ) {
     this.clientForm = this.fb.group({
       name: ['', Validators.required],
-      phone: ['', Validators.required],
+     // phone: ['', Validators.required],
+      phone: ['', [Validators.required, Validators.pattern(/^[0-9]{8,10}$/)]],
       vehicle: [''],
       plate: [''],
       notes: ['']
@@ -239,56 +240,7 @@ getFormattedDate(timestamp: number | null | undefined): string {
     }
   }
 
-  saveClient0(): void {
-    if (this.clientForm.invalid) {
-      alert('Por favor completa todos los campos obligatorios.');
-      return;
-    }
 
-    try {
-      const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
-
-      // Actualizar enlaces
-      const space = this.spaces[this.selectedSpaceKey];
-      this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
-      this.qrCaption = `${client.name} — ${client.code}`;
-
-      // Generar QR final
-      this.qrService.generateQR('qrcode', client.qrText);
-      this.showQR = true;
-
-      alert('Cliente guardado exitosamente!');
-    } catch (error) {
-      alert('Error al guardar cliente: ' + error);
-    }
-  }
-
-  saveClient1(): void {
-  if (this.clientForm.invalid) {
-    alert('Por favor completa todos los campos obligatorios.');
-    return;
-  }
-
-  try {
-    const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
-
-    const space = this.spaces[this.selectedSpaceKey];
-    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
-    this.qrCaption = `${client.name} — ${client.code}`;
-
-    this.qrService.generateQR('qrcode', client.qrText); // Genera QR escaneable
-    this.showQR = true;
-
-    // Descargar QR automáticamente para adjuntar a WhatsApp
-    setTimeout(() => {
-      this.qrService.downloadQR('qrcode', `${client.code}.png`);
-    }, 500); // Delay para asegurar renderizado
-
-    alert('Cliente guardado exitosamente!');
-  } catch (error) {
-    alert('Error al guardar cliente: ' + error);
-  }
-}
 
 saveClient(): void {
   if (this.clientForm.invalid) {
@@ -298,6 +250,9 @@ saveClient(): void {
 
   try {
     const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
+
+    console.log('Número WhatsApp:', client.phoneIntl);
+    console.log('Link WhatsApp:', this.whatsappLink);
 
     const space = this.spaces[this.selectedSpaceKey];
     this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
@@ -316,6 +271,7 @@ saveClient(): void {
   }
 }
 
+
    openWhatsApp0(): void {
     if (this.whatsappLink) {
       window.location.href = this.whatsappLink;
@@ -327,6 +283,25 @@ saveClient(): void {
     // Descargar QR antes de abrir WhatsApp
     this.qrService.downloadQR('qrcode', `${this.qrCaption}.png`);
     window.open(this.whatsappLink, '_blank'); // Abrir en nueva pestaña para attach manual
+  }
+}
+
+// En tu componente .ts
+openWhatsApp1(): void {
+  if (this.whatsappLink) {
+    // Primero descargar QR
+    this.qrService.downloadQR('qrcode', `${this.qrCaption}.png`);
+
+    // Pequeño delay para que termine la descarga
+    setTimeout(() => {
+      // Abrir WhatsApp en la misma ventana para mejor experiencia
+      window.location.href = this.whatsappLink;
+
+      // Alternativa: abrir en nueva pestaña
+      // window.open(this.whatsappLink, '_blank', 'noopener,noreferrer');
+    }, 100);
+  } else {
+    alert('No se pudo generar el link de WhatsApp');
   }
 }
 
@@ -356,37 +331,7 @@ saveClient(): void {
     }
   }
 
-  toggleOccupiedQR0(): void {
-    this.showOccupiedQR = !this.showOccupiedQR;
-    if (this.showOccupiedQR && this.selectedClient) {
-      this.qrService.generateQR('occQRElm', this.selectedClient.qrText);
-    }
-  }
 
- toggleOccupiedQR1(): void {
-  this.showOccupiedQR = !this.showOccupiedQR;
-  if (this.showOccupiedQR && this.selectedClient) {
-    setTimeout(() => {
-      this.qrService.generateQR('occQRElm', this.selectedClient!.qrText); // Non-null assertion para TypeScript
-    }, 300);
-  }
-}
-
-toggleOccupiedQR2(): void {
-  this.showOccupiedQR = !this.showOccupiedQR;
-  if (this.showOccupiedQR && this.selectedClient) {
-    console.log('toggleOccupiedQR: Generando QR para', this.selectedClient.qrText); // Log para depurar
-    setTimeout(() => {
-      const container = document.getElementById('occQRElm');
-      if (container) {
-        this.qrService.generateQR('occQRElm', this.selectedClient!.qrText);
-        console.log('QR generado para occupied modal');
-      } else {
-        console.error('Container #occQRElm no encontrado');
-      }
-    }, 500); // Aumentar delay para renderizado del modal
-  }
-}
 
 toggleOccupiedQR(): void {
   this.showOccupiedQR = !this.showOccupiedQR;
@@ -530,26 +475,6 @@ editSpace(space: Space): void {
   console.log('Datos del espacio antes de editar:', this.editedSpace); // Logging para depurar
 }
 
-/*
-confirmEditSpace0(): void {
-  if (this.newSpaceKey && this.newSpaceKey !== this.selectedSpaceKey) {
-    // Validar patrón: SUBN-XXX (XXX alfanumérico, mínimo 1 carácter)
-    const pattern = /^SUB\d+-[A-Za-z0-9]+$/;
-    if (!pattern.test(this.newSpaceKey)) {
-      alert('La clave debe seguir el patrón SUBN-XXX (donde XXX son letras o números).');
-      return;
-    }
-    try {
-      this.autolavadoService.editSpace(this.selectedSpaceKey, this.newSpaceKey);
-      this.filterSpaces();
-      this.cdr.detectChanges();
-      alert('Espacio editado exitosamente!');
-    } catch (error) {
-      alert('Error al editar espacio: ' + error);
-    }
-  }
-  this.hideModal('editSpaceModal');
-}*/
 
 confirmEditSpace(): void {
   console.log('confirmEditSpace ejecutado', { newSpaceKey: this.newSpaceKey, selectedSpaceKey: this.selectedSpaceKey, editedSpace: this.editedSpace });
