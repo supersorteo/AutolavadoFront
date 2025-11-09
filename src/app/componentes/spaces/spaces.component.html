@@ -146,7 +146,7 @@
         <div class="modal-content modal-dark">
           <div class="modal-header">
             <h5 class="modal-title">
-              Asignar cliente a <span class="code-badge">{{selectedSpaceKey}}</span>
+              Asignar cliente a <span class="code-badge">{{selectedSpace?.displayName || selectedSpaceKey}}</span>
             </h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
@@ -272,7 +272,7 @@
       <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content modal-dark">
           <div class="modal-header">
-            <h5 class="modal-title">Espacio <span class="code-badge">{{selectedSpaceKey}}</span></h5>
+            <h5 class="modal-title">Espacio <span class="code-badge">{{selectedSpace?.displayName || selectedSpaceKey}}</span></h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
