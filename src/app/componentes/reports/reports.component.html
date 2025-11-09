@@ -81,8 +81,7 @@
       </div>
     </div>
 
-    <!-- Clientes Actuales -->
-   <!-- Reemplaza la sección de la tabla en reports.component.html por esto -->
+
 <div class="card mb-4">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -110,7 +109,7 @@
             </td>
             <td>{{client.name}}</td>
             <td>
-              <span class="badge bg-info">{{client.spaceKey}}</span>
+              <span class="badge bg-info">{{$any(client).spaceDisplayName}}</span>
             </td>
             <td>+{{client.phoneIntl}}</td>
             <td>{{client.vehicle || '-'}}</td>

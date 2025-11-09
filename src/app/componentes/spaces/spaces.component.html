@@ -120,12 +120,12 @@
       </div>
     </div>
 
-    <!-- Legend -->
-    <div class="d-flex gap-2 flex-wrap small mb-5">
+
+    <!--div-- class="d-flex gap-2 flex-wrap small mb-5">
       <span class="badge" style="background:#0ea5e9">Libre</span>
       <span class="badge" style="background:#ef4444">Ocupado</span>
       <span class="badge" style="background:#f59e0b">Reservado / retenido</span>
-    </div>
+    </!div-->
 
     <!--button-- class="btn btn-primary btn-lg position-fixed"
     style="bottom: 20px; right: 20px; border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1050;" onclick="window.open('https://orbitasoftware.site/', '_blank')">
@@ -206,6 +206,8 @@
   <button *ngIf="whatsappLink" class="btn btn-success flex-fill btn-sm d-block d-md-inline-block" (click)="openWhatsApp()">
     WhatsApp
   </button>
+
+
   <button class="btn btn-danger flex-fill btn-sm d-block d-md-inline-block" (click)="deleteSpace()">
     Eliminar
   </button>
@@ -227,6 +229,43 @@
         </div>
       </div>
     </div>
+
+
+<div class="modal fade show" tabindex="-1" [ngClass]="{'d-block': showWhatsAppModal}" style="background-color: rgba(0,0,0,0.5);" *ngIf="showWhatsAppModal">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content modal-dark">
+      <div class="modal-header">
+        <h5 class="modal-title">Mensaje para WhatsApp</h5>
+        <button type="button" class="btn-close btn-close-white" (click)="closeWhatsAppModal()"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Mensaje para enviar:</label>
+        <textarea class="form-control" rows="6" readonly>{{ whatsappMessage }}</textarea>
+
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-outline-primary btn-sm" (click)="copyMessage()">Copiar mensaje</button>
+         <!--a-- [href]="whatsappLink"
+   target="_blank"
+   class="btn btn-success btn-sm"
+   [class.disabled]="!hasCopiedMessage"
+   [attr.aria-disabled]="!hasCopiedMessage"
+   [attr.tabindex]="!hasCopiedMessage ? -1 : null">
+  Abrir WhatsApp
+</!--a-->
+
+<button class="btn btn-success btn-sm"
+        [disabled]="!hasCopiedMessage"
+        (click)="launchWhatsApp()">
+  Abrir WhatsApp
+</button>
+
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
     <!-- Occupied Modal -->
     <div class="modal fade" id="occupiedModal" tabindex="-1" aria-hidden="true">
@@ -267,9 +306,13 @@
               </div>
             </div>
             <div class="d-flex gap-2 mt-3">
-              <a *ngIf="whatsappLink" [href]="whatsappLink" target="_blank" class="btn btn-success">
+              <!--a *ngIf="whatsappLink" [href]="whatsappLink" target="_blank" class="btn btn-success">
                 WhatsApp
-              </a>
+              </a-->
+              <button class="btn btn-success" (click)="openWhatsAppModalOccupied()">
+              WhatsApp
+            </button>
+
               <button class="btn btn-outline-secondary" (click)="toggleOccupiedQR()">Ver QR</button>
               <button class="btn btn-danger ms-auto" (click)="releaseSpace()">Liberar espacio</button>
             </div>
@@ -286,6 +329,26 @@
         </div>
       </div>
     </div>
+
+    <div class="modal fade show" tabindex="-1" [ngClass]="{'d-block': showWhatsAppModalOccupied}" style="background-color: rgba(0,0,0,0.5);" *ngIf="showWhatsAppModalOccupied">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content modal-dark">
+      <div class="modal-header">
+        <h5 class="modal-title">Mensaje para WhatsApp</h5>
+        <button type="button" class="btn-close btn-close-white" (click)="closeWhatsAppModalOccupied()"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Mensaje para enviar:</label>
+        <textarea class="form-control" rows="6" readonly>{{ whatsappMessageOccupied }}</textarea>
+
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-outline-primary btn-sm" (click)="copyMessageOccupied()">Copiar mensaje</button>
+          <button class="btn btn-success btn-sm"  [disabled]="!hasCopiedMessageOccupied" (click)="launchWhatsApp()">Abrir WhatsApp</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
   <!--div-- class="modal fade" id="editSpaceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm modal-dialog-centered">
@@ -424,6 +487,20 @@
           <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast para copia exitosa -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="copyToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="2000">
+    <div class="toast-header">
+      <i class="bi bi-clipboard-check text-success me-2"></i>
+      <strong class="me-auto">Copiado</strong>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+    <div class="toast-body">
+      Mensaje copiado al portapapeles exitosamente.
     </div>
   </div>
 </div>

@@ -65,7 +65,7 @@ export class AutolavadoService {
   public spaces$ = this.spacesSubject.asObservable();
   public clients$ = this.clientsSubject.asObservable();
   public currentSubId$ = this.currentSubIdSubject.asObservable();
-  public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject]).pipe(
+ /* public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject]).pipe(
     map(([clients, searchTerm]) => {
       const term = searchTerm.trim().toLowerCase();
       return Object.values(clients).filter(client => {
@@ -81,7 +81,33 @@ export class AutolavadoService {
         );
       });
     })
-  );
+  );*/
+
+public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject, this.spaces$]).pipe(
+  map(([clients, searchTerm, spaces]) => {
+    const term = searchTerm.trim().toLowerCase();
+    const filtered = Object.values(clients).filter(client => {
+      const space = spaces[client.spaceKey];
+      if (!space || !space.occupied) return false;
+      if (!term) return true;
+      return (
+        (client.name || '').toLowerCase().includes(term) ||
+        (client.code || '').toLowerCase().includes(term) ||
+        (client.spaceKey || '').toLowerCase().includes(term) ||
+        (client.phoneIntl || '').toLowerCase().includes(term) ||
+        (client.vehicle || '').toLowerCase().includes(term)
+      );
+    }).map(client => { // Enriquecer con displayName
+      const space = spaces[client.spaceKey];
+      return {
+        ...client,
+        spaceDisplayName: space ? (space.displayName || space.key) : client.spaceKey
+      } as any; // Type assertion para evitar error TS
+    });
+    console.log('Filtered Clients enriquecidos:', filtered); // Logging para depurar
+    return filtered;
+  })
+);
 
   constructor(private http: HttpClient) {
     this.loadAll();
@@ -473,14 +499,37 @@ resetData(): void {
     return `whatsapp://send?phone=${phone}&text=${text}`;
   }
 
-  buildWhatsAppLink(client: Client, space: Space): string {
+  buildWhatsAppLink00(client: Client, space: Space): string {
   const phone = client.phoneIntl; // Debe estar en formato 549XXXXXXXXXX
-  const msg = `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en el autolavado:\n• Código cliente: ${client.code} 🔑\n• Espacio: ${space.key} (${space.subsueloId}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
+  const msg = `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en excellsior:\n• Código cliente: ${client.code} 🔑\n• Espacio: ${space.key} (${space.subsueloId}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
   const text = encodeURIComponent(msg);
 
   // Usar wa.me en lugar de whatsapp://send
   return `https://wa.me/${phone}?text=${text}`;
 }
+
+buildWhatsAppLink(client: Client, space: Space): string {
+  const phone = client.phoneIntl;
+  const message = this.buildWhatsAppMessage(client, space);
+  const encoded = encodeURIComponent(message);
+ // return `https://wa.me/${client.phoneIntl}?text=${encoded}`;
+  return `whatsapp://send?phone=${phone}&text=${encoded}`;
+}
+
+buildWhatsAppLink2(client: Client): string {
+  return `https://wa.me/${client.phoneIntl}`;
+}
+
+
+buildWhatsAppMessage(client: Client, space: Space): string {
+ //return `Hola ${client.name}!\n\nDatos de tu estadía en el autolavado:\n- Código cliente: ${client.code}\n- Espacio: ${space.key} (${space.subsueloId})\n- Ingreso: ${new Date(space.startTime!).toLocaleString()}\n\nMostrá este QR al personal.`;
+ return `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en exellssior:\n• Código cliente: ${client.code} estarás ocupando el🔑\n• Espacio: ${space.displayName} ubicado en el subsuelo:(${space.displayName}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
+
+
+}
+
+
+
 
 
 // En autolavado.service.ts

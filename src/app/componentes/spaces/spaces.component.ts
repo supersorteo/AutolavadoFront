@@ -48,6 +48,17 @@ export class SpacesComponent implements OnInit, OnDestroy {
 
   clientForm: FormGroup;
   editedSubsueloLabel = '';
+
+  whatsappMessage: string = '';
+
+  showWhatsAppModal: boolean = false;
+
+  hasCopiedMessage: boolean = false;
+
+  showWhatsAppModalOccupied = false;
+  whatsappMessageOccupied = '';
+  hasCopiedMessageOccupied = false;
+
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
@@ -242,7 +253,7 @@ getFormattedDate(timestamp: number | null | undefined): string {
 
 
 
-saveClient(): void {
+/*saveClient(): void {
   if (this.clientForm.invalid) {
     alert('Por favor completa todos los campos obligatorios.');
     return;
@@ -269,6 +280,38 @@ saveClient(): void {
   } catch (error) {
     alert('Error al guardar cliente: ' + error);
   }
+}*/
+
+saveClient(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(client, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
+    console.log('Número WhatsApp:', client.phoneIntl);
+    console.log('Link WhatsApp:', this.whatsappLink);
+    console.log('Mensaje para WhatsApp:', this.whatsappMessage);
+
+    this.hasCopiedMessage = false;
+
+    this.qrCaption = `${client.name} — ${client.code}`;
+    this.showQR = true;
+
+    setTimeout(() => {
+      this.qrService.generateQR('qrcode', client.qrText);
+    }, 300);
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    alert('Error al guardar cliente: ' + error);
+  }
 }
 
 
@@ -278,13 +321,80 @@ saveClient(): void {
     }
   }
 
-  openWhatsApp(): void {
+  openWhatsApp2(): void {
   if (this.whatsappLink) {
     // Descargar QR antes de abrir WhatsApp
     this.qrService.downloadQR('qrcode', `${this.qrCaption}.png`);
     window.open(this.whatsappLink, '_blank'); // Abrir en nueva pestaña para attach manual
   }
 }
+
+openWhatsApp(): void {
+  this.showWhatsAppModal = true;
+}
+
+closeWhatsAppModal(): void {
+  this.showWhatsAppModal = false;
+}
+
+
+
+
+copyMessage0(): void {
+  navigator.clipboard.writeText(this.whatsappMessage).then(() => {
+    this.hasCopiedMessage = true;
+    alert('Mensaje copiado al portapapeles');
+  });
+}
+
+copyMessage(): void {
+  navigator.clipboard.writeText(this.whatsappMessage).then(() => {
+    this.hasCopiedMessage = true;
+    // Activar toast
+    const toastEl = document.getElementById('copyToast');
+    if (toastEl) {
+      const toast = new bootstrap.Toast(toastEl);
+      toast.show();
+    }
+  }).catch(err => {
+    console.error('Error copying message:', err);
+    // Fallback alert si clipboard falla
+    alert('Error al copiar mensaje');
+  });
+}
+
+launchWhatsApp(): void {
+  if (this.whatsappLink) {
+    this.qrService.downloadQR('qrcode', `${this.qrCaption}.png`);
+    window.open(this.whatsappLink, '_blank');
+    // this.closeWhatsAppModalOccupied();
+
+    this.hasCopiedMessageOccupied = false
+    // No cerramos el modal aquí
+  }
+}
+
+
+
+launchWhatsAppOccupied(): void {
+  if (this.whatsappLink) {
+    //this.qrService.downloadQR('qrcode', `${this.qrCaption}.png`);
+    window.open(this.whatsappLink, '_blank');
+
+
+  }
+}
+
+ downloadQR(): void {
+    this.qrService.downloadQR('qrcode', `cliente_${this.selectedSpaceKey, this.qrCaption}.png`);
+
+  }
+
+  downloadOccupiedQR(): void {
+    this.qrService.downloadQR('occQRElm', `cliente_${this.selectedClient?.code, this.qrCaption || 'cliente'}.png`);
+  }
+
+
 
 // En tu componente .ts
 openWhatsApp1(): void {
@@ -358,13 +468,6 @@ toggleOccupiedQR(): void {
   }
 }
 
-  downloadQR(): void {
-    this.qrService.downloadQR('qrcode', `cliente_${this.selectedSpaceKey}.png`);
-  }
-
-  downloadOccupiedQR(): void {
-    this.qrService.downloadQR('occQRElm', `${this.selectedClient?.code || 'cliente'}.png`);
-  }
 
   releaseSpace(): void {
     if (confirm(`¿Liberar espacio ${this.selectedSpaceKey}?`)) {
@@ -525,5 +628,39 @@ transferSpace(): void {
     }
   }
 }
+
+
+openWhatsAppModalOccupied(): void {
+  if (this.selectedClient && this.selectedSpace) {
+    this.whatsappMessageOccupied = this.autolavadoService.buildWhatsAppMessage(this.selectedClient, this.selectedSpace);
+    this.showWhatsAppModalOccupied = true;
+  }
+}
+
+// Método para cerrar modal WhatsApp
+closeWhatsAppModalOccupied(): void {
+  this.showWhatsAppModalOccupied = false;
+}
+
+// Método para copiar mensaje
+copyMessageOccupied(): void {
+  navigator.clipboard.writeText(this.whatsappMessageOccupied).then(() => {
+    this.hasCopiedMessageOccupied = true;
+
+       const toastEl = document.getElementById('copyToast');
+    if (toastEl) {
+      const toast = new bootstrap.Toast(toastEl);
+      toast.show();
+    }
+  }).catch(err => {
+    console.error('Error copying message:', err);
+    // Fallback alert si clipboard falla
+    alert('Error al copiar mensaje');
+  });
+
+
+}
+
+
 
 }
