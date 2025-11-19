@@ -180,6 +180,12 @@
           <button class="btn btn-outline-warning" (click)="generateReport()">
             Generar Reporte
           </button>
+
+          <button class="btn btn-outline-info" (click)="toggleReportsList()">
+        {{ showReportsList ? 'Cerrar Lista' : 'Ver Reportes' }}
+      </button>
         </div>
       </div>
     </div>
+
+    <app-reports-list *ngIf="showReportsList"></app-reports-list>

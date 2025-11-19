@@ -41,3 +41,17 @@ export interface QRData {
   };
   start: number;
 }
+
+export interface Report {
+  id: number;
+  timestamp: string;
+  totalSpaces: number;
+  occupiedSpaces: number;
+  freeSpaces: number;
+  occupancyRate: number;
+  subsueloStats: string; // JSON string
+  timeStats: string; // JSON string
+  filteredClients: string; // JSON string
+}
+
+

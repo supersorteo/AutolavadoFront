@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, combineLatest, Observable, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
+import { Report } from '../models/autolavado.model';
 
 // Interfaces
 export interface Subsuelo {
@@ -41,6 +42,8 @@ export interface ClientData {
   notes?: string;
 }
 
+
+
 @Injectable({
   providedIn: 'root'
 })
@@ -65,23 +68,7 @@ export class AutolavadoService {
   public spaces$ = this.spacesSubject.asObservable();
   public clients$ = this.clientsSubject.asObservable();
   public currentSubId$ = this.currentSubIdSubject.asObservable();
- /* public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject]).pipe(
-    map(([clients, searchTerm]) => {
-      const term = searchTerm.trim().toLowerCase();
-      return Object.values(clients).filter(client => {
-        const space = this.spacesSubject.value[client.spaceKey];
-        if (!space || !space.occupied) return false;
-        if (!term) return true;
-        return (
-          (client.name || '').toLowerCase().includes(term) ||
-          (client.code || '').toLowerCase().includes(term) ||
-          (client.spaceKey || '').toLowerCase().includes(term) ||
-          (client.phoneIntl || '').toLowerCase().includes(term) ||
-          (client.vehicle || '').toLowerCase().includes(term)
-        );
-      });
-    })
-  );*/
+
 
 public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject, this.spaces$]).pipe(
   map(([clients, searchTerm, spaces]) => {
@@ -316,82 +303,6 @@ saveClient(clientData: ClientData, spaceKey: string): Client {
 }
 
 
-saveClient0(clientData: ClientData, spaceKey: string): Observable<Client> {
-  const client = {
-    ...clientData,
-    spaceKey
-  };
-  console.log('Guardando cliente en backend:', client);
-
-  return this.http.post<Client>(`${this.API_BASE}/clients`, client).pipe(
-    map(savedClient => {
-      console.log('Cliente guardado en backend:', savedClient);
-      // Actualizar espacio localmente
-      const spaces = this.spacesSubject.value;
-      const space = spaces[spaceKey];
-      if (space) {
-        space.occupied = true;
-        space.clientId = savedClient.id;
-        space.startTime = Date.now();
-        space.hold = false;
-        space.client = savedClient;
-        this.spacesSubject.next({ ...spaces });
-        this.saveToLocalStorage(this.LS_KEYS.spaces, spaces);
-      }
-      // Sync local
-      const clients = this.clientsSubject.value;
-      clients[savedClient.id] = savedClient;
-      this.clientsSubject.next({ ...clients });
-      this.saveToLocalStorage(this.LS_KEYS.clients, clients);
-      return savedClient;
-    }),
-    catchError(error => {
-      console.error('Error saving client to backend, fallback local', error);
-      // Fallback local
-      const localClient = this.saveClientLocal(clientData, spaceKey);
-      return of(localClient);
-    })
-  );
-}
-
-private saveClientLocal(clientData: ClientData, spaceKey: string): Client {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-  if (!space) throw new Error('Espacio no encontrado');
-  if (space.occupied) throw new Error('El espacio ya está ocupado');
-
-  const id = this.generateClientId();
-  const code = id.toUpperCase();
-  const phoneIntl = this.toPhoneAR(clientData.phone);
-
-  const client: Client = {
-    id,
-    code,
-    name: clientData.name.trim(),
-    phoneIntl: phoneIntl,
-    phoneRaw: clientData.phone.trim(),
-    vehicle: clientData.vehicle?.trim() || '',
-    plate: clientData.plate?.trim() || '',
-    notes: clientData.notes?.trim() || '',
-    spaceKey,
-    qrText: ''
-  };
-
-  space.occupied = true;
-  space.clientId = id;
-  space.startTime = Date.now(); // Corrección: startTime, no startId
-  space.hold = false;
-  space.client = client;
-
-  client.qrText = this.buildQRText(client, space);
-  clients[id] = client;
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({ ...clients });
-  this.saveAll();
-  return client;
-}
 
 private saveToLocalStorage(key: string, data: any): void {
   try {
@@ -796,5 +707,110 @@ transferSpace(spaceKey: string, newSubsueloId: string): void {
   this.clientsSubject.next({ ...clients });
   this.saveAll();
 }
+
+
+
+generateReportsListHtml(reports: Report[]): string {
+  const reportHtml = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lista de Reportes - Exellsior</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
+    h1 { color: #0ea5e9; text-align: center; }
+    .table-dark { --bs-table-bg: #1e293b; --bs-table-striped-bg: #2d446a; }
+    .progress { height: 25px; background: #374151; }
+    .progress-bar { height: 100%; line-height: 25px; text-align: center; font-size: 0.875em; }
+    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Lista de Reportes - Exellsior</h1>
+  <div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="h4 mb-0">Lista de Reportes</h2>
+
+    </div>
+    <div class="table-responsive">
+      <table class="table table-dark table-striped">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Total Espacios</th>
+            <th>Ocupados</th>
+            <th>Libres</th>
+            <th>% Ocupación</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${reports.length > 0 ? reports.map(report => `
+            <tr>
+              <td>${report.id}</td>
+              <td>${new Date(report.timestamp).toLocaleString()}</td>
+              <td>${report.totalSpaces}</td>
+              <td><span class="badge bg-danger">${report.occupiedSpaces}</span></td>
+              <td><span class="badge bg-success">${report.freeSpaces}</span></td>
+              <td>
+                <div class="progress">
+                  <div class="progress-bar bg-${report.occupancyRate < 50 ? 'success' : report.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${report.occupancyRate}%">
+                    ${report.occupancyRate}%
+                  </div>
+                </div>
+              </td>
+              <td>
+                <button onclick="viewReport(${report.id})" class="btn btn-sm btn-outline-primary me-1">Ver</button>
+                <button onclick="deleteReport(${report.id})" class="btn btn-sm btn-outline-danger">Eliminar</button>
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="7" class="no-data">No hay reportes disponibles</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+    <div *ngIf="reports.length === 0" class="text-center text-muted py-4">
+      No hay reportes disponibles
+    </div>
+  </div>
+  <script>
+    const API_BASE = 'http://localhost:8080/api'; // Ajusta a tu backend
+
+    function viewReport(id) {
+      fetch(\`\${API_BASE}/reports/\${id}\`)
+        .then(response => response.json())
+        .then(report => {
+          // Genera HTML detallado o descarga (reutiliza generateReportHtml)
+          const detailHtml = 'HTML detallado del reporte ID ' + report.id; // Placeholder, implementa
+          const blob = new Blob([detailHtml], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        })
+        .catch(error => alert('Error al ver reporte: ' + error));
+    }
+
+    function deleteReport(id) {
+      if (confirm('¿Eliminar reporte ID ' + id + '?')) {
+        fetch(\`\${API_BASE}/reports/\${id}\`, { method: 'DELETE' })
+          .then(response => {
+            if (response.ok) {
+              location.reload(); // Reload para actualizar lista
+            } else {
+              alert('Error al eliminar');
+            }
+          })
+          .catch(error => alert('Error: ' + error));
+      }
+    }
+  </script>
+</body>
+</html>
+  `;
+  return reportHtml;
+}
+
 
 }

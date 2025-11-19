@@ -301,12 +301,12 @@ saveClient(): void {
 
     this.hasCopiedMessage = false;
 
-    this.qrCaption = `${client.name} — ${client.code}`;
+   /* this.qrCaption = `${client.name} — ${client.code}`;
     this.showQR = true;
 
     setTimeout(() => {
       this.qrService.generateQR('qrcode', client.qrText);
-    }, 300);
+    }, 300);*/
 
     alert('Cliente guardado exitosamente!');
   } catch (error) {

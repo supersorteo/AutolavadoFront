@@ -1,14 +1,16 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, takeUntil, combineLatest } from 'rxjs';
-import { Client, Space, Subsuelo } from '../../models/autolavado.model';
+import { Subject, takeUntil, combineLatest, catchError, of } from 'rxjs';
+import { Client, Report, Space, Subsuelo } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
+import { HttpClient } from '@angular/common/http';
+import { ReportsListComponent } from "../reports-list/reports-list.component";
 
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ReportsListComponent],
   templateUrl: './reports.component.html',
   styleUrls: ['./reports.component.scss']
 })
@@ -37,7 +39,10 @@ export class ReportsComponent implements OnInit, OnDestroy {
   currentPage = 1;
   currentClients!: Client[];
 
-  constructor(private autolavadoService: AutolavadoService, private cdr: ChangeDetectorRef) {}
+  private API_BASE = 'http://localhost:8080/api'
+
+  showReportsList = false;
+  constructor(private autolavadoService: AutolavadoService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
 
 
   ngOnInit(): void {
@@ -69,6 +74,30 @@ export class ReportsComponent implements OnInit, OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
   }
+
+toggleReportsList(): void {
+  this.showReportsList = !this.showReportsList;
+  if (this.showReportsList) {
+    this.refreshStats(); // Actualiza stats al abrir
+  }
+}
+
+toggleReportsList0(): void {
+  this.http.get<Report[]>(`${this.API_BASE}/reports`).subscribe({
+    next: (reports) => {
+      console.log('Reportes cargados para new tab:', reports);
+      const reportHtml = this.autolavadoService.generateReportsListHtml(reports);
+      const blob = new Blob([reportHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank'); // Abre new tab
+      URL.revokeObjectURL(url);
+    },
+    error: (error) => {
+      console.error('Error loading reports for new tab', error);
+      alert('Error al cargar lista de reportes');
+    }
+  });
+}
 
   private calculateStats(): void {
     const spacesArray = Object.values(this.spaces);
@@ -207,45 +236,11 @@ export class ReportsComponent implements OnInit, OnDestroy {
     URL.revokeObjectURL(url);
   }
 
-  generateReport0(): void {
-    const report = `
-REPORTE EXELLSSIOR - ${new Date().toLocaleString()}
-===================================================
 
-RESUMEN GENERAL:
-- Total de espacios: ${this.totalSpaces}
-- Espacios ocupados: ${this.occupiedSpaces}
-- Espacios libres: ${this.freeSpaces}
-- Tasa de ocupación: ${this.occupancyRate}%
 
-DETALLE POR SUBSUELO:
-${this.subsueloStats.map(stat =>
-  `- ${stat.label}: ${stat.occupied}/${stat.total} (${stat.occupancyRate}%)`
-).join('\n')}
+generateReport0(): void {
 
-DISTRIBUCIÓN POR TIEMPO:
-- Menos de 1 hora: ${this.timeStats.under1h} espacios
-- Entre 1 y 3 horas: ${this.timeStats.between1h3h} espacios
-- Más de 3 horas: ${this.timeStats.over3h} espacios
 
-CLIENTES ACTIVOS (${this.filteredClients.length}):
-${this.filteredClients.map(client =>
-  `- ${client.name} (${client.code}) - ${client.spaceKey} - ${this.getElapsedTime(client.spaceKey)}`
-).join('\n')}
-`;
-
-    const blob = new Blob([report], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `reporte_exellssior_${new Date().toISOString().split('T')[0]}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-
-generateReport(): void {
   const reportHtml = `
 <!DOCTYPE html>
 <html lang="es">
@@ -398,7 +393,33 @@ generateReport(): void {
   URL.revokeObjectURL(url);
 }
 
-generateReport1(): void {
+generateReport(): void {
+  // Preparar datos para backend
+  const reportData = {
+    timestamp: new Date().toISOString(),
+    totalSpaces: this.totalSpaces,
+    occupiedSpaces: this.occupiedSpaces,
+    freeSpaces: this.freeSpaces,
+    occupancyRate: this.occupancyRate,
+    subsueloStats: JSON.stringify(this.subsueloStats), // String JSON
+    timeStats: JSON.stringify(this.timeStats), // String JSON
+    filteredClients: JSON.stringify(this.filteredClients) // String JSON
+  };
+
+  console.log('Enviando reporte al backend:', reportData);
+
+  // POST al backend
+  this.http.post<any>(`${this.API_BASE}/reports`, reportData).pipe(
+    catchError(error => {
+      console.error('Error saving report to backend', error);
+      alert('Reporte descargado localmente, pero error al guardar en backend: ' + error.message);
+      return of(null);
+    })
+  ).subscribe(response => {
+    console.log('Reporte guardado en backend:', response);
+  });
+
+  // Generación y descarga HTML local (tu código original)
   const reportHtml = `
 <!DOCTYPE html>
 <html lang="es">
@@ -406,199 +427,136 @@ generateReport1(): void {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reporte Exellsior - ${new Date().toLocaleString()}</title>
-  <!-- Bootstrap CSS CDN -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <style>
-    body { background: #0f172a; color: #e2e8f0; }
-    .header { background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; padding: 20px; text-align: center; }
-    .card { background: #1e293b; border: 1px solid #334155; margin-bottom: 20px; }
-    .card-header { background: #16213e; color: #0ea5e9; }
-    .table-dark { --bs-table-bg: #1e293b; --bs-table-striped-bg: #2d446a; }
-    .progress { height: 25px; background: #374151; }
-    .progress-bar { height: 100%; line-height: 25px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-    @media print { body { background: white; color: black; } .header { background: none; color: black; } }
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
+    h1 { color: #0ea5e9; text-align: center; }
+    .section { margin-bottom: 30px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
+    tr:hover { background: #2d446a; }
+    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
+    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
+    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .time-number { font-size: 1.5em; font-weight: bold; }
+    .no-data { text-align: center; color: #94a3b8; font-style: italic; padding: 40px; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1 class="mb-0">Reporte Exellsior</h1>
-    <p class="mb-0">${new Date().toLocaleString()}</p>
+  <h1>Reporte Exellssior - ${new Date().toLocaleString()}</h1>
+
+  <div class="section">
+    <h2>Resumen General</h2>
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-number">${this.totalSpaces}</div>
+        <div>Total Espacios</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: #10b981;">${this.occupiedSpaces}</div>
+        <div>Ocupados</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: #3b82f6;">${this.freeSpaces}</div>
+        <div>Libres</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" style="color: #f59e0b;">${this.occupancyRate}%</div>
+        <div>Ocupación</div>
+      </div>
+    </div>
   </div>
 
-  <div class="container-fluid px-4">
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <h5 class="mb-0">Resumen General</h5>
-          </div>
-          <div class="card-body">
-            <div class="row g-3">
-              <div class="col-md-3">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-primary">${this.totalSpaces}</h3>
-                    <p class="card-text">Total Espacios</p>
-                  </div>
+  <div class="section">
+    <h2>Detalle por Subsuelo</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Subsuelo</th>
+          <th>Total</th>
+          <th>Ocupados</th>
+          <th>Libres</th>
+          <th>% Ocupación</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${this.subsueloStats.map(stat => `
+          <tr>
+            <td>${stat.label}</td>
+            <td>${stat.total}</td>
+            <td><span class="badge bg-danger">${stat.occupied}</span></td>
+            <td><span class="badge bg-success">${stat.free}</span></td>
+            <td>
+              <div class="progress">
+                <div class="progress-bar bg-${this.getProgressBarClass(stat.occupancyRate)}" style="width: ${stat.occupancyRate}%">
+                  ${stat.occupancyRate}%
                 </div>
               </div>
-              <div class="col-md-3">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-success">${this.occupiedSpaces}</h3>
-                    <p class="card-text">Ocupados</p>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-3">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-info">${this.freeSpaces}</h3>
-                    <p class="card-text">Libres</p>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-3">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-warning">${this.occupancyRate}%</h3>
-                    <p class="card-text">Ocupación</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Distribución por Tiempo</h2>
+    <div class="time-stats">
+      <div class="time-card">
+        <div class="time-number" style="color: #10b981;">${this.timeStats.under1h}</div>
+        <div>Menos de 1h</div>
+      </div>
+      <div class="time-card">
+        <div class="time-number" style="color: #f59e0b;">${this.timeStats.between1h3h}</div>
+        <div>1h - 3h</div>
+      </div>
+      <div class="time-card">
+        <div class="time-number" style="color: #ef4444;">${this.timeStats.over3h}</div>
+        <div>Más de 3h</div>
       </div>
     </div>
+  </div>
 
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <h5 class="mb-0">Detalle por Subsuelo</h5>
-          </div>
-          <div class="card-body">
-            <div class="table-responsive">
-              <table class="table table-dark table-striped">
-                <thead>
-                  <tr>
-                    <th>Subsuelo</th>
-                    <th>Total</th>
-                    <th>Ocupados</th>
-                    <th>Libres</th>
-                    <th>% Ocupación</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${this.subsueloStats.map(stat => `
-                    <tr>
-                      <td>${stat.label}</td>
-                      <td>${stat.total}</td>
-                      <td><span class="badge bg-danger">${stat.occupied}</span></td>
-                      <td><span class="badge bg-success">${stat.free}</span></td>
-                      <td>
-                        <div class="progress">
-                          <div class="progress-bar ${this.getProgressBarClass(stat.occupancyRate)}" style="width: ${stat.occupancyRate}%">
-                            ${stat.occupancyRate}%
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+  <div class="section">
+    <h2>Clientes Activos (${this.filteredClients.length})</h2>
+    ${this.filteredClients.length > 0 ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Cliente</th>
+            <th>Espacio</th>
+            <th>Teléfono</th>
+            <th>Vehículo</th>
+            <th>Tiempo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${this.filteredClients.map(client => `
+            <tr>
+              <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
+              <td>${client.name}</td>
+              <td style="color: #3b82f6;">${client.spaceDisplayName}</td>
+              <td>+${client.phoneIntl}</td>
+              <td>${client.vehicle || '-'}</td>
+              <td style="color: #f59e0b;">${this.getElapsedTime(client.spaceKey)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : '<div class="no-data">No hay clientes actualmente</div>'}
+  </div>
 
-    <div class="row mb-4">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <h5 class="mb-0">Distribución por Tiempo</h5>
-          </div>
-          <div class="card-body">
-            <div class="row time-stats">
-              <div class="col-md-4">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-success">${this.timeStats.under1h}</h3>
-                    <p class="card-text">Menos de 1h</p>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-warning">${this.timeStats.between1h3h}</h3>
-                    <p class="card-text">1h - 3h</p>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-4">
-                <div class="card text-center">
-                  <div class="card-body">
-                    <h3 class="card-title text-danger">${this.timeStats.over3h}</h3>
-                    <p class="card-text">Más de 3h</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <h5 class="mb-0">Clientes Activos (${this.filteredClients.length})</h5>
-          </div>
-          <div class="card-body">
-            ${this.filteredClients.length > 0 ? `
-              <div class="table-responsive">
-                <table class="table table-dark table-striped">
-                  <thead>
-                    <tr>
-                      <th>Código</th>
-                      <th>Cliente</th>
-                      <th>Espacio</th>
-                      <th>Teléfono</th>
-                      <th>Vehículo</th>
-                      <th>Tiempo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${this.filteredClients.map(client => `
-                      <tr>
-                        <td><span class="badge bg-secondary">${client.code}</span></td>
-                        <td>${client.name}</td>
-                        <td><span class="badge bg-info">${client.spaceDisplayName}</span></td>
-                        <td>+${client.phoneIntl}</td>
-                        <td>${client.vehicle || '-'}</td>
-                        <td><span class="text-warning">${this.getElapsedTime(client.spaceKey)}</span></td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </div>
-            ` : '<div class="no-data">No hay clientes actualmente</div>'}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      // Auto-imprimir al cargar
-      window.onload = function() { window.print(); };
-    </script>
-  </body>
+  <script>
+    // Auto-imprimir al cargar
+    window.onload = function() { window.print(); };
+  </script>
+</body>
 </html>
   `;
 
@@ -606,11 +564,13 @@ generateReport1(): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}.html`;
+  link.download = `reporte_exellssior_${new Date().toISOString().split('T')[0]}.html`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+
 
 }
