@@ -61,7 +61,8 @@ export class AutolavadoService {
   private currentSubIdSubject = new BehaviorSubject<string | null>(null);
   private searchTermSubject = new BehaviorSubject<string>('');
 
-  API_BASE = 'http://localhost:8080/api'
+  //API_BASE = 'http://localhost:8080/api'
+   private API_BASE = 'https://talented-connection-production.up.railway.app/api'
 
   // Observables públicos
   public subsuelos$ = this.subsuelosSubject.asObservable();
@@ -710,7 +711,9 @@ transferSpace(spaceKey: string, newSubsueloId: string): void {
 
 
 
-generateReportsListHtml(reports: Report[]): string {
+
+
+generateReportsListHtml(): string { // Sin parámetro; fetch interno
   const reportHtml = `
 <!DOCTYPE html>
 <html lang="es">
@@ -726,6 +729,7 @@ generateReportsListHtml(reports: Report[]): string {
     .progress { height: 25px; background: #374151; }
     .progress-bar { height: 100%; line-height: 25px; text-align: center; font-size: 0.875em; }
     .no-data { text-align: center; color: #94a3b8; padding: 40px; }
+    .loading { text-align: center; color: #94a3b8; padding: 40px; }
   </style>
 </head>
 <body>
@@ -733,63 +737,82 @@ generateReportsListHtml(reports: Report[]): string {
   <div class="container-fluid px-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2 class="h4 mb-0">Lista de Reportes</h2>
-
+      <button onclick="loadReports()" class="btn btn-outline-primary btn-sm">Recargar</button>
     </div>
-    <div class="table-responsive">
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Fecha</th>
-            <th>Total Espacios</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${reports.length > 0 ? reports.map(report => `
+    <div id="reportsTableContainer" class="loading">Cargando reportes...</div>
+  </div>
+  <script>
+
+    const API_BASE1 = 'http://localhost:8080/api';
+
+    const API_BASE = 'https://talented-connection-production.up.railway.app/api'
+
+    function loadReports() {
+      document.getElementById('reportsTableContainer').innerHTML = '<div class="loading">Cargando...</div>';
+      fetch(\`\${API_BASE}/reports\`)
+        .then(response => response.json())
+        .then(reports => {
+          if (reports.length === 0) {
+            document.getElementById('reportsTableContainer').innerHTML = '<div class="no-data">No hay reportes disponibles</div>';
+            return;
+          }
+          const tbody = reports.map(report => \`
             <tr>
-              <td>${report.id}</td>
-              <td>${new Date(report.timestamp).toLocaleString()}</td>
-              <td>${report.totalSpaces}</td>
-              <td><span class="badge bg-danger">${report.occupiedSpaces}</span></td>
-              <td><span class="badge bg-success">${report.freeSpaces}</span></td>
+              <td>\${report.id}</td>
+              <td>\${new Date(report.timestamp).toLocaleString()}</td>
+              <td>\${report.totalSpaces}</td>
+              <td><span class="badge bg-danger">\${report.occupiedSpaces}</span></td>
+              <td><span class="badge bg-success">\${report.freeSpaces}</span></td>
               <td>
                 <div class="progress">
-                  <div class="progress-bar bg-${report.occupancyRate < 50 ? 'success' : report.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${report.occupancyRate}%">
-                    ${report.occupancyRate}%
+                  <div class="progress-bar bg-\${report.occupancyRate < 50 ? 'success' : report.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: \${report.occupancyRate}%">
+                    \${report.occupancyRate}%
                   </div>
                 </div>
               </td>
               <td>
-                <button onclick="viewReport(${report.id})" class="btn btn-sm btn-outline-primary me-1">Ver</button>
-                <button onclick="deleteReport(${report.id})" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                <button onclick="viewReport(\${report.id})" class="btn btn-sm btn-outline-primary me-1">Ver</button>
+                <button onclick="deleteReport(\${report.id})" class="btn btn-sm btn-outline-danger">Eliminar</button>
               </td>
             </tr>
-          `).join('') : '<tr><td colspan="7" class="no-data">No hay reportes disponibles</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-    <div *ngIf="reports.length === 0" class="text-center text-muted py-4">
-      No hay reportes disponibles
-    </div>
-  </div>
-  <script>
-    const API_BASE = 'http://localhost:8080/api'; // Ajusta a tu backend
+          \`).join('');
+          document.getElementById('reportsTableContainer').innerHTML = \`
+            <div class="table-responsive">
+              <table class="table table-dark table-striped">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Fecha</th>
+                    <th>Total Espacios</th>
+                    <th>Ocupados</th>
+                    <th>Libres</th>
+                    <th>% Ocupación</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>\${tbody}</tbody>
+              </table>
+            </div>
+          \`;
+        })
+        .catch(error => {
+          document.getElementById('reportsTableContainer').innerHTML = '<div class="no-data">Error al cargar: ' + error + '</div>';
+        });
+    }
+
+    // Cargar al abrir tab
+    window.onload = loadReports;
 
     function viewReport(id) {
       fetch(\`\${API_BASE}/reports/\${id}\`)
         .then(response => response.json())
         .then(report => {
-          // Genera HTML detallado o descarga (reutiliza generateReportHtml)
-          const detailHtml = 'HTML detallado del reporte ID ' + report.id; // Placeholder, implementa
+          const detailHtml = 'HTML detallado del reporte ID ' + report.id; // Implementa como generateReport
           const blob = new Blob([detailHtml], { type: 'text/html' });
           const url = URL.createObjectURL(blob);
           window.open(url, '_blank');
         })
-        .catch(error => alert('Error al ver reporte: ' + error));
+        .catch(error => alert('Error: ' + error));
     }
 
     function deleteReport(id) {
@@ -797,7 +820,7 @@ generateReportsListHtml(reports: Report[]): string {
         fetch(\`\${API_BASE}/reports/\${id}\`, { method: 'DELETE' })
           .then(response => {
             if (response.ok) {
-              location.reload(); // Reload para actualizar lista
+              loadReports(); // Refetch sin reload
             } else {
               alert('Error al eliminar');
             }
@@ -807,9 +830,339 @@ generateReportsListHtml(reports: Report[]): string {
     }
   </script>
 </body>
+</html>`;
+  return reportHtml;
+}
+
+
+
+generateReportDetailHtml0(report: Report): string {
+  // Parse JSON strings
+  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
+  const timeStats = JSON.parse(report.timeStats || '{}');
+  const filteredClients = JSON.parse(report.filteredClients || '[]');
+
+  const reportHtml = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
+    h1 { color: #0ea5e9; text-align: center; }
+    .section { margin-bottom: 30px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
+    tr:hover { background: #2d446a; }
+    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
+    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
+    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .time-number { font-size: 1.5em; font-weight: bold; }
+    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
+
+  <div class="container-fluid px-4">
+    <!-- Resumen General -->
+    <div class="section">
+      <h2>Resumen General</h2>
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-number">${report.totalSpaces}</div>
+          <div>Total Espacios</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
+          <div>Ocupados</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
+          <div>Libres</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
+          <div>Ocupación</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detalle por Subsuelo -->
+    <div class="section">
+      <h2>Detalle por Subsuelo</h2>
+      <table class="table table-dark table-striped">
+        <thead>
+          <tr>
+            <th>Subsuelo</th>
+            <th>Total</th>
+            <th>Ocupados</th>
+            <th>Libres</th>
+            <th>% Ocupación</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${subsueloStats.length > 0 ? subsueloStats.map((stat: { label: any; total: any; occupied: any; free: any; occupancyRate: number; }) => `
+            <tr>
+              <td>${stat.label}</td>
+              <td>${stat.total}</td>
+              <td><span class="badge bg-danger">${stat.occupied}</span></td>
+              <td><span class="badge bg-success">${stat.free}</span></td>
+              <td>
+                <div class="progress">
+                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
+                    ${stat.occupancyRate}%
+                  </div>
+                </div>
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Distribución por Tiempo -->
+    <div class="section">
+      <h2>Distribución por Tiempo</h2>
+      <div class="time-stats">
+        <div class="time-card">
+          <div class="time-number" style="color: #10b981;">${timeStats.under1h}</div>
+          <div>Menos de 1h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h}</div>
+          <div>1h - 3h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #ef4444;">${timeStats.over3h}</div>
+          <div>Más de 3h</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clientes Activos -->
+    <div class="section">
+      <h2>Clientes Activos (${filteredClients.length})</h2>
+      ${filteredClients.length > 0 ? `
+        <table class="table table-dark table-striped">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Cliente</th>
+              <th>Espacio</th>
+              <th>Teléfono</th>
+              <th>Vehículo</th>
+              <th>Tiempo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredClients.map((client: { code: any; name: any; spaceDisplayName: any; phoneIntl: any; vehicle: any; elapsedTime: any; }) => `
+              <tr>
+                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
+                <td>${client.name}</td>
+                <td style="color: #3b82f6;">${client.spaceDisplayName}</td>
+                <td>+${client.phoneIntl}</td>
+                <td>${client.vehicle || '-'}</td>
+                <td style="color: #f59e0b;">${client.elapsedTime || 'N/A'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
+    </div>
+  </div>
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
 </html>
   `;
   return reportHtml;
+}
+
+generateReportDetailHtml(report: Report): string {
+  // Parsear los JSON que vienen como string desde la base de datos
+  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
+  const timeStats = JSON.parse(report.timeStats || '{}');
+  let filteredClients = [];
+  try {
+    filteredClients = JSON.parse(report.filteredClients || '[]');
+  } catch (e) {
+    console.error('Error parsing filteredClients', e);
+  }
+
+  // Calcular el tiempo transcurrido para cada cliente usando qrText.start
+  const now = Date.now();
+  filteredClients = filteredClients.map((client: any) => {
+    let elapsedTime = 'N/A';
+    try {
+      const qrData = JSON.parse(client.qrText || '{}');
+      const start = qrData.start || 0;
+      if (start > 0) {
+        const ms = now - start;
+        const mins = Math.floor(ms / 60000);
+        const hours = Math.floor(mins / 60);
+        const min = mins % 60;
+        elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
+      }
+    } catch (e) {
+      // Si falla el parse, deja N/A
+    }
+    return { ...client, elapsedTime };
+  });
+
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
+    h1 { color: #0ea5e9; text-align: center; }
+    .section { margin-bottom: 30px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
+    tr:hover { background: #2d446a; }
+    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
+    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
+    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .time-number { font-size: 1.5em; font-weight: bold; }
+    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
+
+  <div class="container-fluid px-4">
+    <!-- Resumen General -->
+    <div class="section">
+      <h2>Resumen General</h2>
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-number">${report.totalSpaces}</div>
+          <div>Total Espacios</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
+          <div>Ocupados</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
+          <div>Libres</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
+          <div>Ocupación</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detalle por Subsuelo -->
+    <div class="section">
+      <h2>Detalle por Subsuelo</h2>
+      <table class="table table-dark table-striped">
+        <thead>
+          <tr>
+            <th>Subsuelo</th>
+            <th>Total</th>
+            <th>Ocupados</th>
+            <th>Libres</th>
+            <th>% Ocupación</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
+            <tr>
+              <td>${stat.label}</td>
+              <td>${stat.total}</td>
+              <td><span class="badge bg-danger">${stat.occupied}</span></td>
+              <td><span class="badge bg-success">${stat.free}</span></td>
+              <td>
+                <div class="progress">
+                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
+                    ${stat.occupancyRate}%
+                  </div>
+                </div>
+              </td>
+            </tr>
+          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Distribución por Tiempo -->
+    <div class="section">
+      <h2>Distribución por Tiempo</h2>
+      <div class="time-stats">
+        <div class="time-card">
+          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
+          <div>Menos de 1h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
+          <div>1h - 3h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
+          <div>Más de 3h</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clientes Activos -->
+    <div class="section">
+      <h2>Clientes Activos (${filteredClients.length})</h2>
+      ${filteredClients.length > 0 ? `
+        <table class="table table-dark table-striped">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Cliente</th>
+              <th>Espacio</th>
+              <th>Teléfono</th>
+              <th>Vehículo</th>
+              <th>Tiempo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredClients.map((client: any) => `
+              <tr>
+                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
+                <td>${client.name}</td>
+                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey}</td>
+                <td>+${client.phoneIntl}</td>
+                <td>${client.vehicle || '-'}</td>
+                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>
+  `;
 }
 
 

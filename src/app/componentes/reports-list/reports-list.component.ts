@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { Report } from '../../models/autolavado.model';
+import { AutolavadoService } from '../../services/autolavado.service';
 
 
 
@@ -15,9 +16,10 @@ import { Report } from '../../models/autolavado.model';
 export class ReportsListComponent implements OnInit{
 
   reports: Report[] = [];
-  private apiBase = 'http://localhost:8080/api';
+  //private apiBase = 'http://localhost:8080/api';
+   private apiBase = 'https://talented-connection-production.up.railway.app/api'
 
-   constructor(private http: HttpClient) {}
+   constructor(private http: HttpClient, private autolavadoService:AutolavadoService) {}
 
    ngOnInit(): void {
     this.loadReports();
@@ -37,7 +39,7 @@ export class ReportsListComponent implements OnInit{
     });
   }
 
-  viewReport(id: number): void {
+  viewReport0(id: number): void {
     this.http.get<Report>(`${this.apiBase}/reports/${id}`).subscribe({
       next: (report) => {
         // Aquí puedes mostrar detalles o descargar (ej. generar HTML como en generateReport)
@@ -49,6 +51,25 @@ export class ReportsListComponent implements OnInit{
       }
     });
   }
+
+  viewReport(id: number): void {
+  this.http.get<Report>(`${this.apiBase}/reports/${id}`).subscribe({
+    next: (report) => {
+      console.log('Reporte detallado:', report);
+      const detailHtml = this.autolavadoService.generateReportDetailHtml(report); // Llama servicio para HTML detallado
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank'); // Abre new tab dinámica
+      URL.revokeObjectURL(url);
+    },
+    error: (error) => {
+      console.error('Error viewing report', error);
+      alert('Error al ver reporte');
+    }
+  });
+}
+
+
 
   deleteReport(id: number): void {
     if (confirm('¿Eliminar reporte ID ' + id + '?')) {

@@ -7,6 +7,7 @@ import { AutolavadoService } from '../../services/autolavado.service';
 import { HttpClient } from '@angular/common/http';
 import { ReportsListComponent } from "../reports-list/reports-list.component";
 
+declare const bootstrap: any;
 @Component({
   selector: 'app-reports',
   standalone: true,
@@ -39,9 +40,13 @@ export class ReportsComponent implements OnInit, OnDestroy {
   currentPage = 1;
   currentClients!: Client[];
 
-  private API_BASE = 'http://localhost:8080/api'
-
+  //private API_BASE = 'http://localhost:8080/api'
+  private API_BASE = 'https://talented-connection-production.up.railway.app/api'
   showReportsList = false;
+
+scheduledTime: string = ''; // Hora guardada (ej. "23:30")
+private dailyInterval: any;
+
   constructor(private autolavadoService: AutolavadoService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
 
 
@@ -66,6 +71,15 @@ export class ReportsComponent implements OnInit, OnDestroy {
       this.calculateStats();
       this.cdr.detectChanges();
     }, 60000);
+
+
+
+    const saved = localStorage.getItem('dailyReportTime');
+  if (saved) {
+    this.scheduledTime = saved;
+    this.startDailyScheduler();
+  }
+
   }
 
 
@@ -83,21 +97,14 @@ toggleReportsList(): void {
 }
 
 toggleReportsList0(): void {
-  this.http.get<Report[]>(`${this.API_BASE}/reports`).subscribe({
-    next: (reports) => {
-      console.log('Reportes cargados para new tab:', reports);
-      const reportHtml = this.autolavadoService.generateReportsListHtml(reports);
-      const blob = new Blob([reportHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank'); // Abre new tab
-      URL.revokeObjectURL(url);
-    },
-    error: (error) => {
-      console.error('Error loading reports for new tab', error);
-      alert('Error al cargar lista de reportes');
-    }
-  });
+  const reportHtml = this.autolavadoService.generateReportsListHtml(); // Genera HTML dinámico
+  const blob = new Blob([reportHtml], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank'); // Abre new tab
+  URL.revokeObjectURL(url);
 }
+
+
 
   private calculateStats(): void {
     const spacesArray = Object.values(this.spaces);
@@ -235,6 +242,135 @@ toggleReportsList0(): void {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }
+
+
+  saveScheduledTime(): void {
+  localStorage.setItem('dailyReportTime', this.scheduledTime);
+  if (this.dailyInterval) clearInterval(this.dailyInterval);
+  this.startDailyScheduler();
+  alert(`Reporte programado diariamente a las ${this.scheduledTime}`);
+}
+
+// Programar ejecución diaria
+startDailyScheduler(): void {
+  if (!this.scheduledTime) return;
+
+  const [hours, minutes] = this.scheduledTime.split(':').map(Number);
+  const now = new Date();
+  let nextRun = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
+
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+
+  const msUntilNext = nextRun.getTime() - now.getTime();
+
+  setTimeout(() => {
+    this.generateAndSaveReport();
+    this.dailyInterval = setInterval(() => {
+      this.generateAndSaveReport();
+    }, 24 * 60 * 60 * 1000); // Cada 24h
+  }, msUntilNext);
+}
+
+
+
+
+generateAndSaveReport(isManual: boolean = false): void {
+  const reportData = {
+    timestamp: new Date().toISOString(),
+    totalSpaces: this.totalSpaces,
+    occupiedSpaces: this.occupiedSpaces,
+    freeSpaces: this.freeSpaces,
+    occupancyRate: this.occupancyRate,
+    subsueloStats: JSON.stringify(this.subsueloStats),
+    timeStats: JSON.stringify(this.timeStats),
+    filteredClients: JSON.stringify(this.filteredClients)
+  };
+
+  console.log('Generando y guardando reporte...', reportData);
+
+  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
+    next: (savedReport) => {
+      console.log('Reporte guardado en backend:', savedReport);
+
+      // Generar HTML detallado
+      const detailHtml = this.autolavadoService.generateReportDetailHtml({
+        ...reportData,
+        id: savedReport.id,
+        timestamp: savedReport.timestamp,
+        subsueloStats: reportData.subsueloStats,
+        timeStats: reportData.timeStats,
+        filteredClients: reportData.filteredClients
+      } as Report);
+
+      // Descargar automáticamente
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // Mostrar toast de éxito
+      this.showSuccessToast(
+        isManual
+          ? 'Reporte manual generado y descargado'
+          : 'Reporte diario automático generado y descargado'
+      );
+    },
+    error: (error) => {
+      console.error('Error al generar reporte', error);
+      this.showErrorToast('Error al generar el reporte');
+    }
+  });
+}
+
+// En reports.component.ts - Métodos de Toast (CORREGIDOS)
+
+showSuccessToast(message: string): void {
+  const toast = document.createElement('div');
+  toast.className = 'toast align-items-center text-bg-success border-0 position-fixed bottom-0 end-0 p-3';
+  toast.style.zIndex = '9999';
+  toast.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body text-white">
+        ✓ ${message}
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+
+  const bsToast = new (window as any).bootstrap.Toast(toast, { delay: 4000 });
+  bsToast.show();
+
+  toast.addEventListener('hidden.bs.toast', () => toast.remove());
+}
+
+showErrorToast(message: string): void {
+  const toast = document.createElement('div');
+  toast.className = 'toast align-items-center text-bg-danger border-0 position-fixed bottom-0 end-0 p-3';
+  toast.style.zIndex = '9999';
+  toast.innerHTML = `
+    <div class="d-flex">
+      <div class="toast-body text-white">
+        ✗ ${message}
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+
+  const bsToast = new (window as any).bootstrap.Toast(toast, { delay: 5000 });
+  bsToast.show();
+
+  toast.addEventListener('hidden.bs.toast.toast', () => toast.remove());
+}
+
 
 
 
