@@ -41,6 +41,7 @@ export class ReportsComponent implements OnInit, OnDestroy {
   editForm = {
     valor: 0,
     clave: '',
+    clover: null as number | null,
     metodoPago: 'efectivo'
   };
   editingClient: Client | null = null;
@@ -283,6 +284,7 @@ toggleReportsList0(): void {
     this.editForm = {
       valor: 0,
       clave: client.code || '',
+      clover: null,
       metodoPago: 'efectivo'
     };
     this.isEditClientOpen = true;
