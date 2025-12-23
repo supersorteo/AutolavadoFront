@@ -23,6 +23,27 @@ export class ReportsComponent implements OnInit, OnDestroy {
   clients: { [key: string]: Client } = {};
   filteredClients: any[] = [];
   searchTerm = '';
+  isClientsDbOpen = false;
+  mockClientsDb = [
+    { id: 'CL-1001', name: 'Ana Lopez', phone: '+52 55 1234 5678', email: 'ana.lopez@example.com', vehicle: 'Nissan Versa 2019', plate: 'ABC-123', lastVisit: '2025-05-30', plan: 'Premium' },
+    { id: 'CL-1002', name: 'Carlos Ruiz', phone: '+52 55 2234 8899', email: 'carlos.ruiz@example.com', vehicle: 'Mazda 3 2018', plate: 'DEF-456', lastVisit: '2025-06-02', plan: 'Basico' },
+    { id: 'CL-1003', name: 'Maria Soto', phone: '+52 81 3344 7788', email: 'maria.soto@example.com', vehicle: 'Toyota Corolla 2020', plate: 'GHI-789', lastVisit: '2025-06-01', plan: 'VIP' },
+    { id: 'CL-1004', name: 'Jorge Vega', phone: '+52 33 4455 6677', email: 'jorge.vega@example.com', vehicle: 'Honda Civic 2017', plate: 'JKL-321', lastVisit: '2025-05-28', plan: 'Basico' },
+    { id: 'CL-1005', name: 'Luisa Perez', phone: '+52 55 5566 1122', email: 'luisa.perez@example.com', vehicle: 'Kia Rio 2021', plate: 'MNO-654', lastVisit: '2025-05-26', plan: 'Premium' },
+    { id: 'CL-1006', name: 'Pedro Ramos', phone: '+52 81 6677 8899', email: 'pedro.ramos@example.com', vehicle: 'Ford Focus 2016', plate: 'PQR-987', lastVisit: '2025-05-24', plan: 'Basico' },
+    { id: 'CL-1007', name: 'Diana Cruz', phone: '+52 33 7788 9900', email: 'diana.cruz@example.com', vehicle: 'Hyundai Elantra 2022', plate: 'STU-159', lastVisit: '2025-06-03', plan: 'VIP' },
+    { id: 'CL-1008', name: 'Ivan Castro', phone: '+52 55 8899 0011', email: 'ivan.castro@example.com', vehicle: 'Chevrolet Onix 2020', plate: 'VWX-753', lastVisit: '2025-05-31', plan: 'Premium' },
+    { id: 'CL-1009', name: 'Rosa Diaz', phone: '+52 81 9900 2233', email: 'rosa.diaz@example.com', vehicle: 'Volkswagen Jetta 2019', plate: 'YZA-852', lastVisit: '2025-06-04', plan: 'Basico' },
+    { id: 'CL-1010', name: 'Miguel Silva', phone: '+52 33 1100 4455', email: 'miguel.silva@example.com', vehicle: 'Renault Kwid 2021', plate: 'BCD-246', lastVisit: '2025-05-29', plan: 'Premium' }
+  ];
+  mockClientsSearch = '';
+  isEditClientOpen = false;
+  editForm = {
+    valor: 0,
+    clave: '',
+    metodoPago: 'efectivo'
+  };
+  editingClient: Client | null = null;
 
   totalSpaces = 0;
   occupiedSpaces = 0;
@@ -185,6 +206,25 @@ toggleReportsList0(): void {
     return this.filteredClients.slice(start, start + this.pageSize);
   }
 
+  get filteredMockClients(): typeof this.mockClientsDb {
+    const term = this.mockClientsSearch.trim().toLowerCase();
+    if (!term) {
+      return this.mockClientsDb;
+    }
+    return this.mockClientsDb.filter(client => {
+      return [
+        client.id,
+        client.name,
+        client.phone,
+        client.email,
+        client.vehicle,
+        client.plate,
+        client.lastVisit,
+        client.plan
+      ].some(value => value.toLowerCase().includes(term));
+    });
+  }
+
   get totalPages(): number {
     return Math.ceil(this.filteredClients.length / this.pageSize);
   }
@@ -216,6 +256,46 @@ toggleReportsList0(): void {
   refreshStats(): void {
     this.calculateStats();
     this.cdr.detectChanges();
+  }
+
+  openClientsDb(): void {
+    this.isClientsDbOpen = true;
+  }
+
+  closeClientsDb(): void {
+    this.isClientsDbOpen = false;
+  }
+
+  clearMockClientsSearch(): void {
+    this.mockClientsSearch = '';
+  }
+
+  editMockClient(client: (typeof this.mockClientsDb)[number]): void {
+    console.log('Editar cliente:', client);
+  }
+
+  deleteMockClient(client: (typeof this.mockClientsDb)[number]): void {
+    console.log('Borrar cliente:', client);
+  }
+
+  openEditClient(client: Client): void {
+    this.editingClient = client;
+    this.editForm = {
+      valor: 0,
+      clave: client.code || '',
+      metodoPago: 'efectivo'
+    };
+    this.isEditClientOpen = true;
+  }
+
+  closeEditClient(): void {
+    this.isEditClientOpen = false;
+    this.editingClient = null;
+  }
+
+  acceptEditClient(): void {
+    console.log('Editar cliente:', this.editingClient, this.editForm);
+    this.closeEditClient();
   }
 
   exportData(): void {

@@ -30,39 +30,7 @@
 
 <hr>
 
-      <div class="col-12 col-md-4">
-        <div class="input-group">
-          <select class="form-select" [(ngModel)]="currentSubId" (change)="onSubsueloChange()">
-            <option *ngFor="let sub of subsuelos" [value]="sub.id">{{sub.label}}</option>
-          </select>
-          <button class="btn btn-primary" (click)="addSubsuelo()">+ Subsuelo</button>
-          <button class="btn btn-danger" (click)="deleteSubsuelo()">- Subsuelo</button>
-
-        </div>
-        <div class="form-text">Podés crear o eliminar varios subsuelos (SUB1, SUB2, ...).</div>
-
-      </div>
-      <div class="col-12 col-md-4">
-        <!--label-- class="form-label">Agregar espacios al subsuelo actual</!--label-->
-        <div class="input-group">
-          <input type="number" class="form-control" min="1" [(ngModel)]="addSpacesCount" value="5">
-          <button class="btn btn-primary" (click)="addSpaces()">+ Espacios</button>
-          <button class="btn btn-danger" (click)="deleteSpaces()">- Espacios</button>
-        </div>
-
-        <div class="form-text">Los códigos siguen el patrón <span class="code-badge">SUBN-###</span>.</div>
-      </div>
-      <div class="col-12 col-md-4">
-       <div class="input-group">
-            <input class="form-control"
-               placeholder="Nombre del espacio"
-               [(ngModel)]="searchTerm"
-               (input)="onSearch()" />
-       </div>
-
-                <!--label-- class="form-label">Buscar cliente / espacio</!--label-->
-                <div class="form-text">Buscar espacio por nombre</div>
-      </div>
+     
     </div>
 
     <!-- Spaces Grid -->
@@ -119,7 +87,44 @@
 
       </div>
     </div>
+<hr>
+<div class="row g-3 align-items-end mb-3">
 
+<div class="col-12 col-md-4">
+        <div class="input-group">
+          <select class="form-select" [(ngModel)]="currentSubId" (change)="onSubsueloChange()">
+            <option *ngFor="let sub of subsuelos" [value]="sub.id">{{sub.label}}</option>
+          </select>
+          <button class="btn btn-add" (click)="addSubsuelo()">+ Subsuelo</button>
+          <button class="btn btn-danger" (click)="deleteSubsuelo()">- Subsuelo</button>
+
+        </div>
+        <div class="form-text">Podés crear o eliminar varios subsuelos (SUB1, SUB2, ...).</div>
+
+      </div>
+      <div class="col-12 col-md-4">
+        <!--label-- class="form-label">Agregar espacios al subsuelo actual</!--label-->
+        <div class="input-group">
+          <input type="number" class="form-control" min="1" [(ngModel)]="addSpacesCount" value="5">
+          <button class="btn btn-add" (click)="addSpaces()">+ Espacios</button>
+          <button class="btn btn-danger" (click)="deleteSpaces()">- Espacios</button>
+        </div>
+
+        <div class="form-text">Los códigos siguen el patrón <span class="code-badge">SUBN-###</span>.</div>
+      </div>
+      <div class="col-12 col-md-4">
+       <div class="input-group">
+            <input class="form-control"
+               placeholder="Nombre del espacio"
+               [(ngModel)]="searchTerm"
+               (input)="onSearch()" />
+       </div>
+
+                <!--label-- class="form-label">Buscar cliente / espacio</!--label-->
+                <div class="form-text">Buscar espacio por nombre</div>
+      </div>
+</div>
+ 
 
     <!--div-- class="d-flex gap-2 flex-wrap small mb-5">
       <span class="badge" style="background:#0ea5e9">Libre</span>
@@ -153,6 +158,16 @@
           <div class="modal-body">
             <form [formGroup]="clientForm" class="row g-3">
               <div class="col-md-6">
+                <label class="form-label">DOCUMENTO DNI (busca en base de datos) </label>
+                <input formControlName="name" class="form-control form-control-dark" required />
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="addToDatabase">
+                  <label class="form-check-label" for="addToDatabase">
+                    Agregar a la base de datos
+                  </label>
+                </div>
+              </div>
+              <div class="col-md-6">
                 <label class="form-label">Nombre y apellido *</label>
                 <input formControlName="name" class="form-control form-control-dark" required />
               </div>
@@ -178,9 +193,33 @@
   </div>
 </div>
               <div class="col-md-6">
-                <label class="form-label">Tipo de vehículo (opcional)</label>
-                <input formControlName="vehicle" class="form-control form-control-dark"
-                       placeholder="Sedán, SUV, Moto…" />
+                <label class="form-label">Tipo de vehículo *</label>
+                <select formControlName="vehicle" class="form-select form-select-dark" >
+                  <option value="">Seleccionar vehículo</option>
+                  <option value="sedan">Sedán - $15</option>
+                  <option value="suv">SUV - $20</option>
+                  <option value="moto">Moto - $8</option>
+                  <option value="camioneta">Camioneta - $25</option>
+                  <option value="utilitario">Utilitario - $18</option>
+                  <option value="auto_compacto">Auto Compacto - $12</option>
+                  <option value="van">Van - $22</option>
+                  <option value="pickup">Pickup - $23</option>
+                  <option value="hatchback">Hatchback - $13</option>
+                  <option value="coupe">Coupé - $16</option>
+                </select>
+
+                <div class="mt-2">
+                  <label class="form-label">Costo de lavado</label>
+                  <div class="input-group">
+                    <span class="input-group-text">$</span>
+                    <input type="number" formControlName="washCost" class="form-control form-control-dark" 
+                           placeholder="Costo" step="0.01" />
+                  </div>
+                </div>
+
+
+
+                       
               </div>
               <div class="col-md-6">
                 <label class="form-label">Matrícula / Patente (opcional)</label>

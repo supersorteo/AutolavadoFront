@@ -1,6 +1,68 @@
  <div class="row mb-4">
+  <hR>
+    <button class="btn btn-outline-info" type="button" (click)="openClientsDb()">
+      BASE DE DATOS DE CLIENTES
+    </button>
+    <hr>
       <div class="col-12">
         <h2 class="h4 mb-3">Reportes y Estadísticas</h2>
+      </div>
+    </div>
+    <div class="clientes-db-modal" *ngIf="isClientsDbOpen">
+      <div class="clientes-db-modal__backdrop" (click)="closeClientsDb()"></div>
+      <div class="clientes-db-modal__content" role="dialog" aria-modal="true">
+        <div class="clientes-db-modal__header">
+          <h2 class="clientes-db-modal__title">Base de datos de clientes</h2>
+          <button class="btn btn-outline-light" type="button" (click)="closeClientsDb()">Cerrar</button>
+        </div>
+        <div class="clientes-db-modal__body">
+          <div class="table-responsive">
+            <table class="table table-dark table-striped">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Cliente</th>
+                  <th>Telefono</th>
+                  <th>Email</th>
+                  <th>Vehiculo</th>
+                  <th>Placa</th>
+                  <th>Ultima visita</th>
+                  <th>Plan</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let client of filteredMockClients">
+                  <td>{{client.id}}</td>
+                  <td>{{client.name}}</td>
+                  <td>{{client.phone}}</td>
+                  <td>{{client.email}}</td>
+                  <td>{{client.vehicle}}</td>
+                  <td>{{client.plate}}</td>
+                  <td>{{client.lastVisit}}</td>
+                  <td>{{client.plan}}</td>
+                  <td>
+                    <div class="clientes-db-modal__actions">
+                      <button class="btn btn-sm btn-outline-warning" type="button" (click)="editMockClient(client)">Editar</button>
+                      <button class="btn btn-sm btn-outline-danger" type="button" (click)="deleteMockClient(client)">Borrar</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="clientes-db-modal__footer">
+          <div class="input-group clientes-db-modal__search">
+            <input
+              type="text"
+              class="form-control"
+              placeholder="Buscar cliente..."
+              [(ngModel)]="mockClientsSearch"
+            >
+            <button class="btn btn-outline-secondary" type="button" (click)="clearMockClientsSearch()">Limpiar</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -85,7 +147,7 @@
 <div class="card mb-4">
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <h5 class="card-title mb-0">Clientes Actuales ({{filteredClients.length}})</h5>
+      <h5 class="card-title mb-0">Sercivios del día ({{filteredClients.length}})</h5>
       <div class="input-group" style="width: 300px;">
         <input type="text" class="form-control" placeholder="Buscar cliente..." [(ngModel)]="searchTerm" (input)="onSearchClients()">
       </div>
@@ -100,6 +162,11 @@
             <th>Teléfono</th>
             <th>Vehículo</th>
             <th>Tiempo</th>
+                        <th>Costo</th>
+                                                <th>info</th>
+
+
+
           </tr>
         </thead>
         <tbody>
@@ -116,6 +183,13 @@
             <td>
               <span class="text-warning">{{getElapsedTime(client.spaceKey)}}</span>
             </td>
+            <TD></TD>
+            <td>
+              <button class="btn btn-sm btn-outline-warning" type="button" (click)="openEditClient(client)">
+                editar
+              </button>
+            </td>
+
           </tr>
         </tbody>
       </table>
@@ -135,6 +209,39 @@
     </div>
     <div *ngIf="filteredClients.length === 0" class="text-center text-muted py-4">
       No hay clientes actualmente
+    </div>
+  </div>
+</div>
+
+<div class="client-edit-modal" *ngIf="isEditClientOpen">
+  <div class="client-edit-modal__backdrop" (click)="closeEditClient()"></div>
+  <div class="client-edit-modal__content" role="dialog" aria-modal="true">
+    <div class="client-edit-modal__header">
+      <h3 class="client-edit-modal__title">Editar cliente</h3>
+      <button class="btn btn-outline-light btn-sm" type="button" (click)="closeEditClient()">Cerrar</button>
+    </div>
+    <div class="client-edit-modal__body">
+      <div class="client-edit-modal__grid">
+        <div class="client-edit-modal__field">
+          <label class="form-label">Valor</label>
+          <input class="form-control" type="number" [(ngModel)]="editForm.valor">
+        </div>
+        <div class="client-edit-modal__field">
+          <label class="form-label">Clave</label>
+          <input class="form-control" type="text" [(ngModel)]="editForm.clave">
+        </div>
+        <div class="client-edit-modal__field client-edit-modal__field--wide">
+          <label class="form-label">Metodo de pago</label>
+          <select class="form-select" [(ngModel)]="editForm.metodoPago">
+            <option value="efectivo">Efectivo</option>
+            <option value="credito">Credito</option>
+            <option value="prepago">Prepago</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="client-edit-modal__footer">
+      <button class="btn btn-outline-info" type="button" (click)="acceptEditClient()">Aceptar</button>
     </div>
   </div>
 </div>
