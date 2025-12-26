@@ -121,11 +121,6 @@
     </div>
 
 
-    <!--div-- class="d-flex gap-2 flex-wrap small mb-5">
-      <span class="badge" style="background:#0ea5e9">Libre</span>
-      <span class="badge" style="background:#ef4444">Ocupado</span>
-      <span class="badge" style="background:#f59e0b">Reservado / retenido</span>
-    </!div-->
 
     <!--button-- class="btn btn-primary btn-lg position-fixed"
     style="bottom: 20px; right: 20px; border-radius: 50%; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 8px rgba(0,0,0,0.3); z-index: 1050;" onclick="window.open('https://orbitasoftware.site/', '_blank')">
@@ -177,11 +172,76 @@
     Ingresá un teléfono válido (8-10 dígitos)
   </div>
 </div>
-              <div class="col-md-6">
+              <!--div-- class="col-md-6">
                 <label class="form-label">Tipo de vehículo (opcional)</label>
                 <input formControlName="vehicle" class="form-control form-control-dark"
                        placeholder="Sedán, SUV, Moto…" />
-              </div>
+              </!--div-->
+
+         <div class="col-md-6">
+  <label class="form-label">Tipo de vehículo *</label>
+  <select
+    formControlName="vehicle"
+    class="form-select form-select-lg shadow-sm"
+    style="background: #1e293b; border: 1px solid #334155; color: #e2e8f0;"
+    required
+    (change)="onVehicleSelected($event)">
+    <option value="" disabled selected>Seleccionar vehículo</option>
+
+    <!-- SUV - $40.000 -->
+    <optgroup label="SUV - $40.000">
+      <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'SUV'">
+        {{ v.model }}
+      </option>
+    </optgroup>
+
+    <!-- AUTO - $35.000 -->
+    <optgroup label="AUTO - $35.000">
+      <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'AUTO'">
+        {{ v.model }}
+      </option>
+    </optgroup>
+
+    <!-- PICKUP - $70.000 -->
+    <optgroup label="PICKUP - $70.000">
+      <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'PICKUP'">
+        {{ v.model }}
+      </option>
+    </optgroup>
+
+    <!-- ALTO PORTE - $100.000 -->
+    <optgroup label="ALTO PORTE - $100.000">
+      <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'ALTO PORTE'">
+        {{ v.model }}
+      </option>
+    </optgroup>
+
+    <!-- MOTO - $35.000 -->
+    <optgroup label="MOTO - $35.000">
+      <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'MOTO'">
+        {{ v.model }}
+      </option>
+    </optgroup>
+  </select>
+  <div class="form-text">Se aplicará el precio según la categoría</div>
+</div>
+
+<div class="col-md-6">
+  <label class="form-label">Precio del servicio *</label>
+  <div class="input-group">
+    <span class="input-group-text">$</span>
+    <input
+      type="number"
+      formControlName="price"
+      class="form-control form-control-lg shadow-sm"
+      style="background: #1e293b; border: 1px solid #334155; color: #e2e8f0;"
+      min="1"
+      required
+      placeholder="Precio">
+  </div>
+  <div class="form-text">Precio por defecto según vehículo. Puedes modificarlo.</div>
+</div>
+
               <div class="col-md-6">
                 <label class="form-label">Matrícula / Patente (opcional)</label>
                 <input formControlName="plate" class="form-control form-control-dark"

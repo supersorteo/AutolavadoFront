@@ -2,8 +2,8 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef, ElementRef, ViewChild,
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 
-import { Subject, takeUntil, combineLatest, BehaviorSubject } from 'rxjs';
-import { Client, Space, Subsuelo } from '../../models/autolavado.model';
+import { Subject, takeUntil, combineLatest, BehaviorSubject, forkJoin } from 'rxjs';
+import { Client, Space, Subsuelo, VehicleType } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
 import { QrService } from '../../services/qr.service';
 
@@ -59,6 +59,9 @@ export class SpacesComponent implements OnInit, OnDestroy {
   whatsappMessageOccupied = '';
   hasCopiedMessageOccupied = false;
 
+
+vehicles: VehicleType[] = [];
+
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
@@ -69,13 +72,14 @@ export class SpacesComponent implements OnInit, OnDestroy {
       name: ['', Validators.required],
      // phone: ['', Validators.required],
       phone: ['', [Validators.required, Validators.pattern(/^[0-9]{8,10}$/)]],
-      vehicle: [''],
+      vehicle: ['', Validators.required],
+      price: [0, [Validators.required, Validators.min(1)]],
       plate: [''],
       notes: ['']
     });
   }
 
-  ngOnInit(): void {
+ /* ngOnInit(): void {
     combineLatest([
       this.autolavadoService.subsuelos$,
       this.autolavadoService.spaces$,
@@ -104,11 +108,143 @@ export class SpacesComponent implements OnInit, OnDestroy {
       this.cdr.detectChanges();
     }, 60000);
 
+this.autolavadoService.loadVehicleTypes().subscribe({
+    next: (vehicles: VehicleType[]) => {
+      this.vehicles = vehicles;
+      console.log('Tipos de vehículos cargados:', vehicles);
+    },
+    error: (err) => {
+      console.error('Error al cargar vehículos', err);
+      alert('No se pudieron cargar los tipos de vehículos');
+    }
+  });
 
 
 
+  }*/
 
+ngOnInit(): void {
+  // 1. VERIFICAR SI HAY DATOS EN LOCALSTORAGE
+  const localSubsuelos = localStorage.getItem('subsuelos');
+  const localSpaces = localStorage.getItem('spaces');
+
+  if (!localSubsuelos || !localSpaces || JSON.parse(localSubsuelos).length === 0) {
+    console.log('LocalStorage vacío → cargando desde backend como respaldo');
+    this.loadDataFromBackend();
+  } else {
+    console.log('Datos encontrados en localStorage → usando local');
+    // Aquí NO llamamos a ningún método → el servicio ya cargó los datos al iniciar
+    // (tu servicio probablemente los carga en el constructor o al instanciarse)
   }
+
+  // 2. SUSCRIPCIONES REACTIVAS (igual que antes)
+  combineLatest([
+    this.autolavadoService.subsuelos$,
+    this.autolavadoService.spaces$,
+    this.autolavadoService.clients$,
+    this.autolavadoService.currentSubId$,
+    this.searchTermSubject
+  ]).pipe(takeUntil(this.destroy$))
+  .subscribe(([subsuelos, spaces, clients, currentSubId]) => {
+    this.subsuelos = subsuelos;
+    this.spaces = spaces;
+    this.clients = clients;
+    this.currentSubId = currentSubId;
+    this.updateCurrentSubTitle();
+    this.filterSpaces();
+  });
+
+  this.searchTermSubject.subscribe(() => {
+    this.currentPage = 1;
+    this.filterSpaces();
+  });
+
+  setInterval(() => {
+    this.cdr.detectChanges();
+  }, 60000);
+
+  // 3. CARGAR VEHÍCULOS DESDE BACKEND (siempre)
+  this.autolavadoService.loadVehicleTypes().subscribe({
+    next: (vehicles: VehicleType[]) => {
+      this.vehicles = vehicles;
+      console.log('Tipos de vehículos cargados desde backend:', vehicles);
+    },
+    error: (err) => {
+      console.error('Error al cargar vehículos', err);
+      alert('No se pudieron cargar los tipos de vehículos');
+    }
+  });
+}
+
+// NUEVO MÉTODO: Cargar subsuelos y espacios desde backend si localStorage vacío
+private loadDataFromBackend(): void {
+  forkJoin({
+    subsuelos: this.autolavadoService.loadSubsuelosFromBackend(),
+    spaces: this.autolavadoService.loadSpacesFromBackend()
+  }).subscribe({
+    next: ({ subsuelos, spaces }) => {
+      console.log('Datos cargados desde backend como respaldo');
+
+      // Convertir array de spaces a objeto con key
+      const spacesObj: { [key: string]: Space } = {};
+      spaces.forEach(s => {
+        spacesObj[s.key] = s;
+      });
+
+      // ACTUALIZAR LOS BEHAVIOR SUBJECTS DEL SERVICIO
+      this.autolavadoService.subsuelosSubject.next(subsuelos);
+      this.autolavadoService.spacesSubject.next(spacesObj);
+
+      // Guardar en localStorage para próxima vez
+      this.autolavadoService.saveAll();
+
+      // Establecer subsuelo actual
+      if (subsuelos.length > 0) {
+        this.autolavadoService.currentSubIdSubject.next(subsuelos[0].id);
+      }
+    },
+    error: (err) => {
+      console.error('Error cargando datos desde backend', err);
+      alert('No hay datos en servidor ni local. Creando subsuelo inicial...');
+      // Crear primer subsuelo si todo falla
+      this.autolavadoService.addSubsuelo();
+    }
+  });
+}
+
+// NUEVO MÉTODO: Cargar subsuelos y espacios desde backend como respaldo
+private loadFromBackendAsBackup(): void {
+  forkJoin({
+    subsuelos: this.autolavadoService.loadSubsuelosFromBackend(),
+    spaces: this.autolavadoService.loadSpacesFromBackend()
+  }).subscribe({
+    next: ({ subsuelos, spaces }) => {
+      console.log('Datos cargados desde backend:', { subsuelos, spaces });
+
+      // Convertir array de spaces a objeto { [key]: Space }
+      const spacesObj: { [key: string]: Space } = {};
+      spaces.forEach(s => spacesObj[s.key] = s);
+
+      // Actualizar subjects
+      this.autolavadoService.subsuelosSubject.next(subsuelos);
+      this.autolavadoService.spacesSubject.next(spacesObj);
+
+      // Guardar en localStorage para próxima vez
+      this.autolavadoService.saveAll();
+
+      // Establecer subsuelo actual (el primero o uno por defecto)
+      if (subsuelos.length > 0) {
+        this.autolavadoService.currentSubIdSubject.next(subsuelos[0].id);
+      }
+    },
+    error: (err) => {
+      console.error('Error cargando respaldo desde backend', err);
+      alert('No hay datos locales ni en servidor. Iniciando vacío.');
+      // Iniciar vacío
+      this.autolavadoService.addSubsuelo(); // Crea el primer subsuelo
+    }
+  });
+}
 
   ngOnDestroy(): void {
     this.destroy$.next();
@@ -253,36 +389,8 @@ getFormattedDate(timestamp: number | null | undefined): string {
 
 
 
-/*saveClient(): void {
-  if (this.clientForm.invalid) {
-    alert('Por favor completa todos los campos obligatorios.');
-    return;
-  }
 
-  try {
-    const client = this.autolavadoService.saveClient(this.clientForm.value, this.selectedSpaceKey);
-
-    console.log('Número WhatsApp:', client.phoneIntl);
-    console.log('Link WhatsApp:', this.whatsappLink);
-
-    const space = this.spaces[this.selectedSpaceKey];
-    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
-    this.qrCaption = `${client.name} — ${client.code}`;
-
-    this.showQR = true; // Setear showQR antes para renderizar div #qrcode
-
-    // Generar QR con delay para asegurar DOM
-    setTimeout(() => {
-      this.qrService.generateQR('qrcode', client.qrText);
-    }, 300); // Aumentar delay a 300ms para renderizado del modal
-
-    alert('Cliente guardado exitosamente!');
-  } catch (error) {
-    alert('Error al guardar cliente: ' + error);
-  }
-}*/
-
-saveClient(): void {
+saveClient0(): void {
   if (this.clientForm.invalid) {
     alert('Por favor completa todos los campos obligatorios.');
     return;
@@ -311,6 +419,361 @@ saveClient(): void {
     alert('Cliente guardado exitosamente!');
   } catch (error) {
     alert('Error al guardar cliente: ' + error);
+  }
+}
+
+saveClient00(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel); // Aquí usa this.vehicles
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = selectedVehicle?.price || 35000;
+
+    const clientData = {
+      ...this.clientForm.value,
+      category,
+      price
+    };
+
+    console.log('Cuerpo enviado al servicio saveClient0:', clientData);
+
+    const client = this.autolavadoService.saveClient0(clientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(client, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(client, space);
+
+    this.hasCopiedMessage = false;
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+saveClient01(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    // === DATOS COMPLETOS PARA EL BACKEND ===
+    const clientDataForBackend = {
+      name: this.clientForm.value.name.trim(),
+      phoneRaw: this.clientForm.value.phone.trim(),
+      vehicle: this.clientForm.value.vehicle?.trim() || '',
+      plate: this.clientForm.value.plate?.trim() || '',
+      notes: this.clientForm.value.notes?.trim() || '',
+      spaceKey: this.selectedSpaceKey,
+      category: category,
+      price: price,
+      // El backend generará code, phoneIntl, qrText, etc.
+      vehicleType: selectedVehicle ? { id: selectedVehicle.id } : null  // ← IMPORTANTE: enviar el ID del vehículo
+    };
+
+    console.log('Datos enviados al backend:', clientDataForBackend);
+
+    // 1. GUARDAR EN LOCAL (tu lógica actual - mantiene todo funcionando offline)
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price
+    };
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+
+    this.hasCopiedMessage = false;
+
+    // 2. GUARDAR EN BACKEND (respaldo)
+    this.autolavadoService.saveClientToBackend(clientDataForBackend).subscribe({
+      next: (serverResponse) => {
+        console.log('Cliente guardado en backend como respaldo:', serverResponse);
+      },
+      error: (err) => {
+        console.warn('No se pudo guardar en backend (funciona offline)', err);
+      }
+    });
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+
+saveClient02(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    // Datos para local (tu lógica actual)
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price
+    };
+
+    // GUARDAR EN LOCAL (genera code, phoneIntl, qrText)
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    // WhatsApp y QR usan el cliente local (perfecto)
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+
+    this.hasCopiedMessage = false;
+
+    // === DATOS PARA BACKEND: usar el cliente local generado (con code, phoneIntl, qrText) ===
+    const clientDataForBackend = {
+      name: localClient.name,
+      phoneRaw: localClient.phoneRaw,
+      phoneIntl: localClient.phoneIntl,
+      code: localClient.code,
+      vehicle: localClient.vehicle,
+      plate: localClient.plate,
+      notes: localClient.notes,
+      spaceKey: localClient.spaceKey,
+      qrText: localClient.qrText,  // ← Enviamos el QR generado localmente
+      category: localClient.category,
+      price: localClient.price,
+      vehicleType: selectedVehicle ? { id: selectedVehicle.id } : null
+    };
+
+    console.log('Datos enviados al backend (con code, phoneIntl, qrText):', clientDataForBackend);
+
+
+    // GUARDAR EN BACKEND
+    this.autolavadoService.saveClientToBackend(clientDataForBackend).subscribe({
+      next: (serverResponse) => {
+        console.log('Cliente guardado en backend como respaldo:', serverResponse);
+      },
+      error: (err) => {
+        console.warn('No se pudo guardar en backend (funciona offline)', err);
+      }
+    });
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+saveClient(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    // Datos para local
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price
+    };
+
+    // GUARDAR EN LOCAL (genera code, phoneIntl, qrText)
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    // WhatsApp y QR (usa cliente local)
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+
+    this.hasCopiedMessage = false;
+
+    // === DATOS PARA BACKEND: cliente con code, phoneIntl, qrText ===
+    const clientDataForBackend = {
+      name: localClient.name,
+      phoneRaw: localClient.phoneRaw,
+      phoneIntl: localClient.phoneIntl,
+      code: localClient.code,
+      vehicle: localClient.vehicle,
+      plate: localClient.plate,
+      notes: localClient.notes,
+      spaceKey: localClient.spaceKey,
+      qrText: localClient.qrText,
+      category: localClient.category,
+      price: localClient.price,
+      vehicleType: selectedVehicle ? { id: selectedVehicle.id } : null
+    };
+
+    console.log('Datos enviados al backend (cliente):', clientDataForBackend);
+
+    // 1. Guardar cliente en backend
+    this.autolavadoService.saveClientToBackend(clientDataForBackend).subscribe({
+      next: (serverClient) => {
+        console.log('Cliente guardado en backend:', serverClient);
+
+        // 2. ACTUALIZAR ESPACIO EN BACKEND (occupied = true)
+        const updatedSpaceForBackend = {
+          key: space.key,
+          subsueloId: space.subsueloId,
+          occupied: true,
+          hold: false,
+          clientId: localClient.id,  // El ID local (string)
+          startTime: space.startTime,
+          displayName: space.displayName
+        };
+
+        this.autolavadoService.updateSpaceInBackend(updatedSpaceForBackend).subscribe({
+          next: () => console.log('Espacio marcado como ocupado en backend'),
+          error: (err) => console.warn('Error actualizando espacio en backend', err)
+        });
+      },
+      error: (err) => {
+        console.warn('No se pudo guardar cliente en backend (funciona offline)', err);
+      }
+    });
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+
+saveClient03(): void {
+  if (this.clientForm.invalid) {
+    alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price
+    };
+
+    // Guardar local (genera code, tempId, qrText)
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+
+    this.hasCopiedMessage = false;
+
+    // Datos para backend (sin id, solo code y datos)
+    const clientDataForBackend = {
+      name: localClient.name,
+      phoneRaw: localClient.phoneRaw,
+      phoneIntl: localClient.phoneIntl,
+      code: localClient.code,
+      vehicle: localClient.vehicle,
+      plate: localClient.plate,
+      notes: localClient.notes,
+      spaceKey: localClient.spaceKey,
+      qrText: localClient.qrText,
+      category: localClient.category,
+      price: localClient.price,
+      vehicleType: selectedVehicle ? { id: selectedVehicle.id } : null
+    };
+
+    console.log('Datos enviados al backend:', clientDataForBackend);
+
+    // Guardar en backend
+    this.autolavadoService.saveClientToBackend(clientDataForBackend).subscribe({
+      next: (serverClient) => {
+        console.log('Cliente guardado en backend con ID real:', serverClient);
+
+        // ACTUALIZAR CLIENTE LOCAL CON ID REAL DEL BACKEND
+        // Buscamos por code (único)
+        const clients = this.autolavadoService.clientsSubject.value;
+        const oldTempId = localClient.id;  // tempId
+        const newId = serverClient.id.toString();  // ID Long del backend como string para clave
+
+        if (clients[oldTempId]) {
+          // Copiamos el cliente
+          const updatedClient = { ...clients[oldTempId], id: newId };
+
+          // Reemplazamos en clients
+          delete clients[oldTempId];
+          clients[newId] = updatedClient;
+
+          // Actualizamos el espacio
+          const space = this.spaces[this.selectedSpaceKey];
+          space.clientId = newId;
+
+          // Emitir cambios
+          this.autolavadoService.clientsSubject.next({ ...clients });
+          this.autolavadoService.spacesSubject.next({ ...this.spaces });
+          this.autolavadoService.saveAll();
+        }
+      },
+      error: (err) => {
+        console.warn('No se pudo guardar en backend (funciona offline)', err);
+      }
+    });
+
+    alert('Cliente guardado exitosamente!');
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error al guardar cliente: ' + error);
+  }
+}
+
+
+onVehicleSelected(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  const selectedModel = select.value;
+
+  if (!selectedModel) {
+    this.clientForm.patchValue({ price: 0 });
+    return;
+  }
+
+  const selectedVehicle = this.vehicles.find(v => v.model === selectedModel);
+
+  if (selectedVehicle) {
+    // Carga el precio por defecto
+    this.clientForm.patchValue({ price: selectedVehicle.price });
+
+    console.log('🚗 Vehículo seleccionado:', {
+      modelo: selectedVehicle.model,
+      categoria: selectedVehicle.category,
+      precioPorDefecto: selectedVehicle.price
+    });
   }
 }
 

@@ -99,6 +99,8 @@
             <th>Espacio</th>
             <th>Teléfono</th>
             <th>Vehículo</th>
+            <th>Categoría</th>
+            <th>Precio</th>
             <th>Tiempo</th>
           </tr>
         </thead>
@@ -113,6 +115,21 @@
             </td>
             <td>+{{client.phoneIntl}}</td>
             <td>{{client.vehicle || '-'}}</td>
+            <td>
+      <span class="badge" [ngClass]="{
+        'bg-primary': client.category === 'SUV',
+        'bg-success': client.category === 'AUTO',
+        'bg-warning': client.category === 'PICKUP',
+        'bg-danger': client.category === 'ALTO PORTE',
+        'bg-secondary': client.category === 'MOTO' || !client.category
+      }">
+        {{ client.category || 'Sin categoría' }}
+      </span>
+    </td>
+
+            <td>
+              <strong class="text-success">${{client.price ? client.price.toLocaleString() : 'Pendiente'}}</strong>
+            </td>
             <td>
               <span class="text-warning">{{getElapsedTime(client.spaceKey)}}</span>
             </td>

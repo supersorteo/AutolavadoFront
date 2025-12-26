@@ -80,6 +80,18 @@ private dailyInterval: any;
     this.startDailyScheduler();
   }
 
+/*const saved = localStorage.getItem('dailyReportTime');
+  if (saved) {
+    this.scheduledTime = saved;
+    this.checkIfShouldGenerateDailyReport();
+  }
+
+  // Verificar cada minuto si ya pasó la hora programada
+  setInterval(() => {
+    this.checkIfShouldGenerateDailyReport();
+  }, 60 * 1000);*/
+
+
   }
 
 
@@ -244,15 +256,21 @@ toggleReportsList0(): void {
   }
 
 
-  saveScheduledTime(): void {
+  saveScheduledTime1(): void {
   localStorage.setItem('dailyReportTime', this.scheduledTime);
   if (this.dailyInterval) clearInterval(this.dailyInterval);
   this.startDailyScheduler();
   alert(`Reporte programado diariamente a las ${this.scheduledTime}`);
 }
 
+saveScheduledTime(): void {
+  localStorage.setItem('dailyReportTime', this.scheduledTime);
+  this.startDailyScheduler(); // Reinicia el scheduler con la nueva hora
+  this.showSuccessToast(`Reporte programado a las ${this.scheduledTime}`);
+}
+
 // Programar ejecución diaria
-startDailyScheduler(): void {
+startDailyScheduler0(): void {
   if (!this.scheduledTime) return;
 
   const [hours, minutes] = this.scheduledTime.split(':').map(Number);
@@ -273,7 +291,79 @@ startDailyScheduler(): void {
   }, msUntilNext);
 }
 
+private startDailyScheduler(): void {
+  if (!this.scheduledTime) return;
 
+  // Limpiar cualquier intervalo anterior
+  if (this.dailyInterval) {
+    clearInterval(this.dailyInterval);
+  }
+
+  // Verificar cada minuto si ya pasó la hora programada hoy
+  this.dailyInterval = setInterval(() => {
+    this.checkAndGenerateDailyReport();
+  }, 60 * 1000); // Cada minuto
+
+  // Verificar inmediatamente al iniciar
+  this.checkAndGenerateDailyReport();
+}
+
+private checkIfShouldGenerateDailyReport0(): void {
+  if (!this.scheduledTime) return;
+
+  const [targetHour, targetMinute] = this.scheduledTime.split(':').map(Number);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, targetMinute);
+
+  // Verificar si ya pasó la hora hoy y no se generó aún
+  const lastRun = localStorage.getItem('lastDailyReportDate');
+  const todayKey = now.toDateString();
+
+  if (now >= today && lastRun !== todayKey) {
+    console.log('Generando reporte diario automático...');
+    this.generateAndSaveReport(false);
+    localStorage.setItem('lastDailyReportDate', todayKey);
+  }
+}
+
+checkIfShouldGenerateDailyReport(): void {
+  if (!this.scheduledTime) return;
+
+  const [hour, minute] = this.scheduledTime.split(':').map(Number);
+  const now = new Date();
+  const scheduled = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
+
+  // Si ya pasó la hora hoy
+  if (now > scheduled) {
+    const lastRun = localStorage.getItem('lastDailyReportDate');
+    const today = now.toDateString();
+
+    if (lastRun !== today) {
+      this.generateAndSaveReport(false);
+      localStorage.setItem('lastDailyReportDate', today);
+      console.log('Reporte diario automático generado a las', this.scheduledTime);
+    }
+  }
+}
+
+private checkAndGenerateDailyReport(): void {
+  if (!this.scheduledTime) return;
+
+  const [hour, minute] = this.scheduledTime.split(':').map(Number);
+  const now = new Date();
+  const todayScheduled = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
+
+  // Clave única para hoy (para no repetir)
+  const todayKey = now.toDateString();
+  const lastRun = localStorage.getItem('lastDailyReportDate');
+
+  // Si ya pasó la hora programada hoy y no se generó aún
+  if (now >= todayScheduled && lastRun !== todayKey) {
+    console.log('Generando reporte automático diario a las', this.scheduledTime);
+    this.generateAndSaveReport(false); // false = automático
+    localStorage.setItem('lastDailyReportDate', todayKey);
+  }
+}
 
 
 generateAndSaveReport(isManual: boolean = false): void {

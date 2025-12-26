@@ -9,7 +9,8 @@ export interface Space {
   occupied: boolean;
   hold: boolean;
   clientId: string | null;
-  client: Client | null;
+  //client: Client | null;
+  client?: Client | null;
   startTime: number | null;
   displayName?: string;
 }
@@ -25,6 +26,8 @@ export interface Client {
   notes?: string;
   spaceKey: string;
   qrText: string;
+  category?: string;  // Nueva propiedad opcional
+  price?: number;
 }
 
 export interface QRData {
@@ -54,4 +57,11 @@ export interface Report {
   filteredClients: string; // JSON string
 }
 
+
+export interface VehicleType {
+  id: number;          // ID generado por la base de datos (Long en backend)
+  model: string;       // Ej: "Toyota Corolla Cross"
+  category: string;    // Ej: "SUV", "AUTO", "PICKUP", "ALTO PORTE", "MOTO"
+  price: number;       // Ej: 40000
+}
 
