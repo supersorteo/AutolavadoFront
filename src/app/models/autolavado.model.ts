@@ -11,7 +11,7 @@ export interface Space {
   clientId: string | null;
   //client: Client | null;
   client?: Client | null;
-  startTime: number | null;
+  startTime: any | null;
   displayName?: string;
 }
 
@@ -19,6 +19,7 @@ export interface Client {
   id: string;
   code: string;
   name: string;
+  dni?: string;
   phoneIntl: string;
   phoneRaw: string;
   vehicle?: string;
@@ -27,7 +28,11 @@ export interface Client {
   spaceKey: string;
   qrText: string;
   category?: string;  // Nueva propiedad opcional
-  price?: number;
+  price?: any;
+  vehicleType?: VehicleType | null;
+  paymentMethod?: string;  // ← NUEVO
+  clover?: number | null;
+  entryTimestamp?: number;
 }
 
 export interface QRData {
