@@ -141,7 +141,8 @@
             <th>Categoría</th>
             <th>Precio</th>
             <th>Tiempo</th>
-            <th>info</th>
+            <th>Salida</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -176,10 +177,37 @@
               <span class="text-warning">{{getElapsedTimeForClient(client)}}</span>
             </td>
             <td>
+      <span class="text-warning">
+        {{ client.exitTimestamp ? (client.exitTimestamp | date:'shortTime') : 'Aún en servicio' }}
+      </span>
+    </td>
+            <!--td>
               <button class="btn btn-sm btn-outline-warning" type="button" (click)="openEditClient(client)">
                 editar
               </button>
+            </td-->
+
+
+<td class="text-center">
+              <div class="d-flex justify-content-center gap-2"> <!-- gap-2 = separación pequeña -->
+                <!-- Botón Editar -->
+                <button
+                  class="btn btn-sm btn-outline-warning"
+                  type="button"
+                  (click)="openEditClient(client)">
+                  <i class="fas fa-edit"></i>
+                </button>
+
+                <!-- Botón Eliminar -->
+                <button
+                  class="btn btn-sm btn-danger"
+                  type="button"
+                  (click)="eliminarServicio(client)">
+                  <i class="fas fa-trash-alt"></i>
+                </button>
+              </div>
             </td>
+
           </tr>
         </tbody>
       </table>
@@ -338,6 +366,9 @@
             <option value="credito">Crédito</option>
             <option value="prepago">Prepago</option>
             <option value="qr">QR</option>
+             <option value="debito">Débito</option>
+             <option value="scaneo">Escaneo</option>
+            <option value="S/Cargo">Sin Cargo</option>
           </select>
         </div>
       </div>

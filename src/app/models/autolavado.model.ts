@@ -16,7 +16,7 @@ export interface Space {
 }
 
 export interface Client {
-  id: string;
+  id: any;
   code: string;
   name: string;
   dni?: string;
@@ -33,6 +33,7 @@ export interface Client {
   paymentMethod?: string;  // ← NUEVO
   clover?: number | null;
   entryTimestamp?: number;
+  exitTimestamp?: any;
 }
 
 export interface QRData {

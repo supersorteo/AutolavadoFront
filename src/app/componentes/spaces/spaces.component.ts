@@ -6,6 +6,8 @@ import { Subject, takeUntil, combineLatest, BehaviorSubject, forkJoin, debounceT
 import { Client, Space, Subsuelo, VehicleType } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
 import { QrService } from '../../services/qr.service';
+import { ToastService } from '../../services/toast.service';
+
 
 declare var bootstrap: any;
 
@@ -69,20 +71,55 @@ export class SpacesComponent implements OnInit, OnDestroy {
   saveClientHeaderMessage = '';
   private saveClientHeaderTimer: any = null;
 
-
 vehicles: VehicleType[] = [];
 existingClientId: any | null = null;
 horaCierreAutomatico = '23:59';
+
+showVehicleModal = false;
+newVehicle = {
+  model: '',
+  category: '',
+  price: 35000
+};
+vehicleTypes: VehicleType[] = []; // Lista actualizada
+selectedVehicleModel = '';
+
+
+
+showNewVehicleModal = false;
+newVehicleModel = ''; // Se prellenará con lo que escribió el usuario
+newVehicleCategory = 'AUTO'; // Valor por defecto
+newVehiclePrice = 35000; // Valor por defecto
+
+showVehicleAside = false;          // Abre/cierra el aside lateral
+vehicleFilter = '';                // Para filtrar la tabla en el aside
+showAddVehicleModal = false;
+
+currentVehiclePage = 1;
+vehiclePageSize = 20;
+
+clientModalInstance: any = null;
+
+
+phoneCountry: string = 'Argentina';   // Nombre
+phoneFlag: string = '🇦🇷';            // Bandera
+phoneCode: string = '+54';            // ← NUEVO: mostrar el código
+phoneIsValid: boolean = false;
+public detectedCountryCode: string | null = null;
+
+
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
     private fb: FormBuilder,
-     private cdr: ChangeDetectorRef
+     private cdr: ChangeDetectorRef,
+     private toastService: ToastService
   ) {
     this.clientForm = this.fb.group({
       name: ['', Validators.required],
       dni: ['', [Validators.required, Validators.pattern('[0-9]{7,8}')]],
-      phone: ['', [Validators.required, Validators.pattern(/^[0-9]{8,10}$/)]],
+      //phone: ['', [Validators.required, Validators.pattern(/^[0-9]{8,10}$/)]],
+      phone: ['', Validators.required],
       vehicle: ['', Validators.required],
       price: [0, [Validators.required, Validators.min(1)]],
       plate: [''],
@@ -270,8 +307,10 @@ this.clientForm.get('dni')?.valueChanges
               this.clientForm.patchValue({
                 name: client.name || '',
                 phone: client.phoneRaw || '',
-                //plate: client.plate || '',
-                //notes: client.notes || ''
+                plate: client.plate || '',
+                notes: client.notes || '',
+                vehicle: client.vehicle || '',
+                price: client.price
               });
 
               alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
@@ -302,6 +341,360 @@ this.clientForm.get('dni')?.valueChanges
     console.log('allClients actualizado desde clientsSubject:', this.allClients.length);
   });
 
+}
+
+
+
+get paginatedVehicles(): VehicleType[] {
+  const start = (this.currentVehiclePage - 1) * this.vehiclePageSize;
+  return this.filteredVehicles.slice(start, start + this.vehiclePageSize);
+}
+
+
+
+get totalVehiclePages(): number {
+  return Math.ceil(this.filteredVehicles.length / this.vehiclePageSize);
+}
+
+get vehiclePageNumbers(): number[] {
+  const total = this.totalVehiclePages;
+  const pages: number[] = [];
+  for (let i = 1; i <= total; i++) {
+    pages.push(i);
+  }
+  return pages;
+}
+
+
+
+onPhoneInput0(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  let phone = input.value.trim().replace(/\s+/g, ''); // Quitar espacios
+
+  // Si empieza con + → tomar el código de país
+  if (phone.startsWith('+')) {
+    const code = phone.substring(1, phone.length).replace(/[^0-9]/g, ''); // Solo números
+    this.detectCountryFromCode(code);
+  } else {
+    // Si no tiene +, asumir Argentina por defecto (+54)
+    this.detectCountryFromCode('54');
+    phone = '+54' + phone; // Agregar +54 automáticamente
+    input.value = phone;   // Mostrar con +54
+  }
+
+  // Validación básica internacional (8-15 dígitos)
+  const digitsOnly = phone.replace(/[^0-9]/g, '');
+  this.phoneIsValid = digitsOnly.length >= 8 && digitsOnly.length <= 15;
+
+  // Guardar el teléfono limpio en el formulario (con + y código)
+  this.clientForm.patchValue({ phone: phone });
+}
+
+onPhoneInput1(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  let phone = input.value.trim();
+
+  let detectedCode = '54'; // Argentina por defecto
+
+  // Limpiar caracteres no numéricos excepto el +
+  phone = phone.replace(/[^0-9+]/g, '');
+
+  if (phone.startsWith('+')) {
+    // Extraer posible código de país (hasta 3 dígitos)
+    const possibleCode = phone.substring(1, 4);
+    if (this.countryPhonePatterns[possibleCode]) {
+      detectedCode = possibleCode;
+    } else {
+      // Si no encuentra código válido, mantener default
+    }
+  }
+
+  this.detectCountryFromCode(detectedCode);
+
+  // Validación básica: 8-15 dígitos totales (incluyendo código)
+  const digitsOnly = phone.replace(/[^0-9]/g, '');
+  this.phoneIsValid = digitsOnly.length >= 8 && digitsOnly.length <= 15;
+
+  // Guardar el teléfono tal como lo escribió el usuario
+  this.clientForm.patchValue({ phone });
+}
+
+
+onPhoneInput2(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  let phone = input.value.trim();
+
+  let detectedCode = '54'; // Argentina por defecto
+
+  // Limpiar caracteres no numéricos excepto el +
+  phone = phone.replace(/[^0-9+]/g, '');
+
+  if (phone.startsWith('+')) {
+    // Extraer posible código de país (hasta 3 dígitos)
+    const possibleCode = phone.substring(1, 4);
+    if (this.countryPhonePatterns[possibleCode]) {
+      detectedCode = possibleCode;
+    } else {
+      // Si no encuentra código válido, mantener default
+    }
+  }
+
+  this.detectCountryFromCode(detectedCode);
+
+  // Validación básica: 8-15 dígitos totales (incluyendo código)
+  const digitsOnly = phone.replace(/[^0-9]/g, '');
+  this.phoneIsValid = digitsOnly.length >= 8 && digitsOnly.length <= 15;
+
+  // Guardar el teléfono tal como lo escribió el usuario
+  this.clientForm.patchValue({ phone });
+}
+
+onPhoneInput3(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  let phone = input.value.trim();
+
+  // Limpiar todo excepto números y el signo +
+  phone = phone.replace(/[^0-9+]/g, '');
+
+  let currentCode: string | null = null;
+
+  // Si hay + → intentar detectar código
+  if (phone.startsWith('+')) {
+    // Buscar el código más largo posible que coincida (hasta 3 dígitos)
+    for (let len = 3; len >= 1; len--) {
+      const possible = phone.substring(1, len + 1);
+      if (this.countryPhonePatterns[possible]) {
+        currentCode = possible;
+        break;
+      }
+    }
+  }
+
+  // Si encontramos código → fijarlo (y mantenerlo)
+  if (currentCode) {
+    this.detectedCountryCode = currentCode;
+  }
+  // Si el usuario borra el + o el código → resetear a default
+  else if (!phone.startsWith('+') || phone === '+') {
+    this.detectedCountryCode = null;
+  }
+
+  // Código a usar (fijado o default)
+  const codeToUse = this.detectedCountryCode || '54';
+  this.detectCountryFromCode(codeToUse);
+
+  // Extraer solo los dígitos locales (sin el + ni código)
+  let localDigits = phone;
+  if (phone.startsWith('+' + codeToUse)) {
+    localDigits = phone.substring(codeToUse.length + 1);
+  } else {
+    localDigits = phone.replace('+', ''); // Por si queda algún +
+  }
+
+  // Validación estricta según país
+  const country = this.countryPhonePatterns[codeToUse];
+  this.phoneIsValid = country
+    ? localDigits.length === country.localDigits
+    : (localDigits.length >= 8 && localDigits.length <= 15); // fallback genérico
+
+  // Guardar teléfono completo (con + y código)
+  this.clientForm.patchValue({ phone: phone });
+}
+
+
+onPhoneInput4(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  let phone = input.value.trim();
+
+  // Limpiar todo menos números y +
+  phone = phone.replace(/[^0-9+]/g, '');
+
+  let detectedCode = '54'; // Default Argentina
+
+  if (phone.startsWith('+')) {
+    // Buscar código de país
+    for (let i = 1; i <= 4; i++) {
+      const possible = phone.substring(1, i + 1);
+      if (this.countryPhonePatterns[possible]) {
+        detectedCode = possible;
+        break;
+      }
+    }
+  }
+
+  this.detectedCountryCode = detectedCode;
+  this.detectCountryFromCode(detectedCode);
+
+  // Extraer dígitos locales (quitar + y código)
+  let localDigits = phone;
+  if (phone.startsWith('+' + detectedCode)) {
+    localDigits = phone.substring(detectedCode.length + 1);
+  } else {
+    localDigits = phone.replace('+', '');
+  }
+
+  // Validación exacta para Argentina: 10 dígitos locales (9 + 9)
+  const country = this.countryPhonePatterns[detectedCode];
+  let isValid = false;
+
+  if (country) {
+    isValid = localDigits.length === country.localDigits;
+  } else {
+    isValid = localDigits.length >= 8 && localDigits.length <= 15;
+  }
+
+  this.phoneIsValid = isValid;
+  this.clientForm.patchValue({ phone });
+
+  // Opcional: mostrar con formato limpio
+  // input.value = `+${detectedCode}${localDigits}`;
+}
+
+
+
+onPhoneInput(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  let phone = input.value.trim();
+
+  // Limpiar todo menos números y +
+  phone = phone.replace(/[^0-9+]/g, '');
+
+  let detectedCode = '54'; // Default Argentina
+
+  if (phone.startsWith('+')) {
+    // Buscar código de país
+    for (let i = 1; i <= 4; i++) {
+      const possible = phone.substring(1, i + 1);
+      if (this.countryPhonePatterns[possible]) {
+        detectedCode = possible;
+        break;
+      }
+    }
+  }
+
+  this.detectedCountryCode = detectedCode;
+  this.detectCountryFromCode(detectedCode);
+
+  // Extraer dígitos locales (quitar + y código)
+  let localDigits = phone;
+  if (phone.startsWith('+' + detectedCode)) {
+    localDigits = phone.substring(detectedCode.length + 1);
+  } else {
+    localDigits = phone.replace('+', '');
+  }
+
+  // Validación específica para Argentina: 10 o 11 dígitos locales
+  const country = this.countryPhonePatterns[detectedCode];
+  let isValid = false;
+
+  if (country) {
+    if (detectedCode === '54') {
+      // Argentina: permite 10 o 11 dígitos locales (más realista)
+      isValid = localDigits.length === 10 || localDigits.length === 11;
+    } else {
+      // Otros países: longitud exacta
+      isValid = localDigits.length === country.localDigits;
+    }
+  } else {
+    // Fallback genérico
+    isValid = localDigits.length >= 8 && localDigits.length <= 15;
+  }
+
+  this.phoneIsValid = isValid;
+  this.clientForm.patchValue({ phone });
+}
+
+
+
+
+public countryPhonePatterns: { [code: string]: { name: string; flag: string; code: string; localDigits: number } } = {
+  '54': { name: 'Argentina', flag: '🇦🇷', code: '+54', localDigits: 10 },  // 9 + 9 dígitos (o 10 sin 9)
+  '55': { name: 'Brasil', flag: '🇧🇷', code: '+55', localDigits: 10 },    // 10-11 dígitos
+  '56': { name: 'Chile', flag: '🇨🇱', code: '+56', localDigits: 9 },
+  '57': { name: 'Colombia', flag: '🇨🇴', code: '+57', localDigits: 10 },
+  '58': { name: 'Venezuela', flag: '🇻🇪', code: '+58', localDigits: 10 },
+  '51': { name: 'Perú', flag: '🇵🇪', code: '+51', localDigits: 9 },
+  '591': { name: 'Bolivia', flag: '🇧🇴', code: '+591', localDigits: 8 },
+  '595': { name: 'Paraguay', flag: '🇵🇾', code: '+595', localDigits: 9 },
+  '598': { name: 'Uruguay', flag: '🇺🇾', code: '+598', localDigits: 8 },
+  '593': { name: 'Ecuador', flag: '🇪🇨', code: '+593', localDigits: 9 },
+  '53': { name: 'Cuba', flag: '🇨🇺', code: '+53', localDigits: 8 },
+  '52': { name: 'México', flag: '🇲🇽', code: '+52', localDigits: 10 },
+  '1': { name: 'EE.UU./Canadá', flag: '🇺🇸', code: '+1', localDigits: 10 },
+  '34': { name: 'España', flag: '🇪🇸', code: '+34', localDigits: 9 },
+};
+
+
+private detectCountryFromCode0(code: string): void {
+  const countryMap: { [key: string]: { name: string; flag: string } } = {
+    // Argentina y vecinos cercanos (los más probables)
+    '54': { name: 'Argentina', flag: '🇦🇷' },
+    '55': { name: 'Brasil', flag: '🇧🇷' },
+    '56': { name: 'Chile', flag: '🇨🇱' },
+    '57': { name: 'Colombia', flag: '🇨🇴' },
+    '58': { name: 'Venezuela', flag: '🇻🇪' },
+    '51': { name: 'Perú', flag: '🇵🇪' },
+    '591': { name: 'Bolivia', flag: '🇧🇴' },
+    '595': { name: 'Paraguay', flag: '🇵🇾' },
+    '598': { name: 'Uruguay', flag: '🇺🇾' },
+    '593': { name: 'Ecuador', flag: '🇪🇨' },
+    '597': { name: 'Surinam', flag: '🇸🇷' },
+    '592': { name: 'Guyana', flag: '🇬🇾' },
+    '53': { name: 'Cuba', flag: '🇨🇺' },
+
+    // Otros muy comunes en la región
+    '52': { name: 'México', flag: '🇲🇽' },
+    '1': { name: 'Estados Unidos / Canadá', flag: '🇺🇸' },
+    '34': { name: 'España', flag: '🇪🇸' },
+    '507': { name: 'Panamá', flag: '🇵🇦' },
+    '506': { name: 'Costa Rica', flag: '🇨🇷' },
+    '505': { name: 'Nicaragua', flag: '🇳🇮' },
+    '504': { name: 'Honduras', flag: '🇭🇳' },
+    '503': { name: 'El Salvador', flag: '🇸🇻' },
+    '502': { name: 'Guatemala', flag: '🇬🇹' },
+
+    // Fallback para códigos desconocidos
+    'default': { name: 'Desconocido', flag: '🌍' }
+  };
+
+  const country = countryMap[code] || countryMap['default'];
+  this.phoneCountry = country.name;
+  this.phoneFlag = country.flag;
+}
+
+
+
+
+private detectCountryFromCode(code: string): void {
+  const countryMap: { [key: string]: { name: string; flag: string; code: string } } = {
+    '54': { name: 'Argentina', flag: '🇦🇷', code: '+54' },
+    '55': { name: 'Brasil', flag: '🇧🇷', code: '+55' },
+    '56': { name: 'Chile', flag: '🇨🇱', code: '+56' },
+    '57': { name: 'Colombia', flag: '🇨🇴', code: '+57' },
+    '58': { name: 'Venezuela', flag: '🇻🇪', code: '+58' },
+    '51': { name: 'Perú', flag: '🇵🇪', code: '+51' },
+    '591': { name: 'Bolivia', flag: '🇧🇴', code: '+591' },
+    '595': { name: 'Paraguay', flag: '🇵🇾', code: '+595' },
+    '598': { name: 'Uruguay', flag: '🇺🇾', code: '+598' },
+    '593': { name: 'Ecuador', flag: '🇪🇨', code: '+593' },
+    '597': { name: 'Surinam', flag: '🇸🇷', code: '+597' },
+    '592': { name: 'Guyana', flag: '🇬🇾', code: '+592' },
+    '53': { name: 'Cuba', flag: '🇨🇺', code: '+53' },
+    '52': { name: 'México', flag: '🇲🇽', code: '+52' },
+    '1': { name: 'EE.UU./Canadá', flag: '🇺🇸', code: '+1' },
+    '34': { name: 'España', flag: '🇪🇸', code: '+34' },
+  };
+
+  const country = countryMap[code];
+  if (country) {
+    this.phoneCountry = country.name;
+    this.phoneFlag = country.flag;
+    this.phoneCode = country.code;
+  } else {
+    this.phoneCountry = 'País desconocido';
+    this.phoneFlag = '🌍';
+    this.phoneCode = '+??';
+  }
 }
 
 
@@ -500,6 +893,74 @@ private loadDataFromBackend(): void {
   });
 }
 
+
+
+
+
+openVehicleAside0(): void {
+  this.showVehicleAside = true;
+  document.body.classList.add('vehicle-aside-open');
+  this.vehicleFilter = ''; // Limpiar filtro
+}
+
+openVehicleAside(): void {
+  // 1. Cerrar el modal de reserva si está abierto
+  const clientModalElement = document.getElementById('clientModal');
+  if (clientModalElement) {
+    this.clientModalInstance = bootstrap.Modal.getInstance(clientModalElement);
+    if (this.clientModalInstance) {
+      this.clientModalInstance.hide();
+      console.log('Modal de reserva cerrado para abrir aside');
+    }
+  }
+
+  // 2. Abrir el aside
+  this.showVehicleAside = true;
+  this.vehicleFilter = '';
+}
+
+// Cierra el aside
+closeVehicleAside(): void {
+  this.showVehicleAside = false;
+
+  // 3. Volver a abrir el modal de reserva si estaba abierto antes
+  if (this.clientModalInstance) {
+    this.clientModalInstance.show();
+    console.log('Modal de reserva reabierto después de cerrar aside');
+  }
+}
+
+onVehicleInput(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const typed = input.value.trim();
+
+  if (typed && !this.vehicles.some(v => v.model.toLowerCase() === typed.toLowerCase())) {
+    // Si escribió algo que no existe → ofrecer agregar
+    if (confirm(`"${typed}" no existe. ¿Agregar como nuevo?`)) {
+      this.newVehicleModel = typed;
+      this.showAddVehicleModal = true;
+    }
+  }
+}
+
+
+get filteredVehicles(): VehicleType[] {
+  if (!this.vehicleFilter.trim()) return this.vehicles;
+  const term = this.vehicleFilter.toLowerCase().trim();
+  return this.vehicles.filter(v =>
+    v.model.toLowerCase().includes(term) ||
+    v.category.toLowerCase().includes(term)
+  );
+}
+
+// Abre modal para agregar nuevo desde el aside
+openAddVehicleModal(): void {
+  this.newVehicleModel = '';
+  this.newVehicleCategory = 'AUTO';
+  this.newVehiclePrice = 35000;
+  this.showAddVehicleModal = true;
+}
+
 // NUEVO MÉTODO: Cargar subsuelos y espacios desde backend como respaldo
 openClientsAdminModal(): void {
   this.loadAllClientsFromBackend();
@@ -573,7 +1034,7 @@ getSpaceByKey(spaceKey: string | null): Space | undefined {
   return this.autolavadoService.spacesSubject.value[spaceKey];
 }
 
-formatDateOnly(startTime: number | null): string {
+formatDateOnly0(startTime: number | null): string {
   if (!startTime) return '-';
   const date = new Date(startTime);
   return date.toLocaleDateString('es-AR', {
@@ -583,6 +1044,20 @@ formatDateOnly(startTime: number | null): string {
     year: 'numeric'
   });
 }
+
+formatDateOnly(timestamp: number | null): string {
+  if (!timestamp) return '-'; // Si ninguno existe → -
+
+  const date = new Date(timestamp);
+  return date.toLocaleDateString('es-AR', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+
 
 formatStartTime(startTime: number | null): string {
   if (!startTime) return '-';
@@ -1022,10 +1497,19 @@ saveClient(): void {
     const category = selectedVehicle?.category || 'AUTO';
     const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
 
+    const phoneData = this.clientForm.value.phone; // Objeto completo
+
+const phoneIntl = phoneData?.number || '';               // +541126911817
+const phoneRaw = phoneData?.nationalNumber || '';        // 1126911817
+const countryCode = phoneData?.countryCode || 'AR';
+
     const localClientData = {
       ...this.clientForm.value,
       category,
-      price
+      price,
+      phoneIntl,
+  phoneRaw,
+  countryCode
     };
 
     // GUARDAR EN LOCAL (genera tempId)
@@ -1102,7 +1586,7 @@ saveClient(): void {
 }
 
 
-onVehicleSelected(event: Event): void {
+onVehicleSelected0(event: Event): void {
   const select = event.target as HTMLSelectElement;
   const selectedModel = select.value;
 
@@ -1124,6 +1608,153 @@ onVehicleSelected(event: Event): void {
     });
   }
 }
+
+
+onVehicleSelected(event: Event): void {
+  const select = event.target as HTMLSelectElement;
+  const selectedModel = select.value.trim();
+
+  // Si no hay selección o es el placeholder, resetear precio
+  if (!selectedModel || selectedModel === '') {
+    this.clientForm.patchValue({ price: 0 });
+    return;
+  }
+
+  const selectedVehicle = this.vehicles.find(v => v.model === selectedModel);
+
+  if (selectedVehicle) {
+    // Vehículo existe → cargar precio
+    this.clientForm.patchValue({ price: selectedVehicle.price });
+    console.log('Vehículo existente seleccionado:', selectedVehicle.model);
+  } else {
+    // Vehículo NO existe → ofrecer agregar nuevo
+    if (confirm(`El modelo "${selectedModel}" no existe. ¿Quieres agregarlo ahora?`)) {
+      this.newVehicleModel = selectedModel; // Prellenar con lo que escribió
+      this.showNewVehicleModal = true;
+    } else {
+      // Si no quiere agregar, limpiar selección
+      select.value = '';
+      this.clientForm.patchValue({ vehicle: '', price: 0 });
+    }
+  }
+}
+
+
+
+
+saveNewVehicle(): void {
+  if (!this.newVehicleModel.trim()) {
+    alert('Debes ingresar un modelo');
+    return;
+  }
+
+  const payload = {
+    model: this.newVehicleModel.trim(),
+    category: this.newVehicleCategory,
+    price: this.newVehiclePrice
+  };
+
+  console.log('Enviando nuevo vehículo al backend:', payload); // ← Log clave
+
+  this.autolavadoService.createVehicleType(payload).subscribe({
+    next: (newType) => {
+      console.log('Nuevo tipo creado:', newType);
+      this.vehicles.push(newType);
+      this.vehicles.sort((a, b) => a.model.localeCompare(b.model));
+      this.showAddVehicleModal = false;
+
+      this.clientForm.patchValue({
+        vehicle: newType.model,
+        price: newType.price
+      });
+
+      this.toastService.showSuccess(`Vehículo "${newType.model}" agregado`);
+    },
+    error: (err) => {
+      console.error('Error creando vehículo:', err);
+      alert('Error al agregar el vehículo');
+    }
+  });
+}
+
+
+updatePriceFromCategory(): void {
+  switch (this.newVehicleCategory) {
+    case 'SUV':
+      this.newVehiclePrice = 40000;
+      break;
+    case 'AUTO':
+      this.newVehiclePrice = 35000;
+      break;
+    case 'PICKUP':
+      this.newVehiclePrice = 70000;
+      break;
+    case 'ALTO PORTE':
+      this.newVehiclePrice = 100000;
+      break;
+    case 'MOTO':
+      this.newVehiclePrice = 35000;
+      break;
+    default:
+      this.newVehiclePrice = 35000;
+  }
+}
+
+
+deleteVehicle(id: number, event: Event): void {
+  event.stopPropagation(); // Evita que se seleccione la fila al pulsar eliminar
+
+  if (!confirm('¿Eliminar este tipo de vehículo permanentemente?')) return;
+
+  this.autolavadoService.deleteVehicleType(id).subscribe({
+    next: () => {
+      this.vehicles = this.vehicles.filter(v => v.id !== id);
+      this.toastService.showSuccess('Vehículo eliminado');
+    },
+    error: (err) => {
+      alert('Error al eliminar vehículo');
+      console.error(err);
+    }
+  });
+}
+
+selectVehicle0(vehicle: VehicleType): void {
+  this.clientForm.patchValue({
+    vehicle: vehicle.model,
+    price: vehicle.price
+  });
+  this.toastService.showSuccess(`Vehículo seleccionado: ${vehicle.model}`);
+  this.closeVehicleAside(); // Opcional: cerrar aside al seleccionar
+}
+
+
+selectVehicle(vehicle: VehicleType): void {
+  // Llenar el formulario con el vehículo seleccionado
+  this.clientForm.patchValue({
+    vehicle: vehicle.model,
+    price: vehicle.price
+  });
+
+  console.log('Vehículo seleccionado desde tabla:', {
+    model: vehicle.model,
+    category: vehicle.category,
+    price: vehicle.price
+  });
+
+  // Cerrar el aside automáticamente después de seleccionar
+  this.closeVehicleAside();
+
+  this.toastService.showSuccess(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`);
+  console.log(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`)
+}
+
+// Cerrar modal sin guardar
+closeNewVehicleModal(): void {
+  this.showNewVehicleModal = false;
+  this.newVehicleModel = '';
+}
+
+
 
 
    openWhatsApp0(): void {

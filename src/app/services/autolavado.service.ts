@@ -32,14 +32,15 @@ export interface Space {
   vehicle?: string;
   plate?: string;
   notes?: string;
-  spaceKey: string;
+  spaceKey: any;
   qrText: string;
   category?: string;  // Nueva propiedad opcional
   price?: number;
   vehicleType?: VehicleType | null;
   paymentMethod?: string;  // ← NUEVO
   clover?: number | null;
-  entryTimestamp?: number;
+  entryTimestamp?: any;
+  exitTimestamp?: number;
 }
 
 
@@ -77,8 +78,8 @@ export class AutolavadoService {
 
 
 
-   //private API_BASE = 'http://localhost:8080/api'
-   private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
+   private API_BASE = 'http://localhost:8080/api'
+   //private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
 
 
   // Observables públicos
@@ -365,9 +366,7 @@ saveSpaceToBackend(space: Space): Observable<Space> {
   return this.http.post<Space>(`${this.API_BASE}/spaces`, space);
 }
 
-  loadVehicleTypes(): Observable<VehicleType[]> {
-  return this.http.get<VehicleType[]>(`${this.API_BASE}/vehicle-types`);
-}
+
 
 // GUARDAR CLIENTE EN EL BACKEND (respaldo real)
 saveClientToBackend0(clientData: any): Observable<Client> {
@@ -434,9 +433,24 @@ getVehicleTypeById(id: number): Observable<VehicleType> {
 }
 
 // Opcional: Crear nuevo tipo de vehículo (para admin futuro)
-createVehicleType(vehicleType: VehicleType): Observable<VehicleType> {
+  loadVehicleTypes(): Observable<VehicleType[]> {
+  return this.http.get<VehicleType[]>(`${this.API_BASE}/vehicle-types`);
+}
+
+createVehicleType(vehicle: { model: string; category: string; price: number }): Observable<VehicleType> {
+   console.log('Enviando al backend:', vehicle);
+  return this.http.post<VehicleType>(`${this.API_BASE}/vehicle-types`, vehicle);
+}
+
+createVehicleType0(vehicleType: VehicleType): Observable<VehicleType> {
   return this.http.post<VehicleType>(`${this.API_BASE}/vehicle-types`, vehicleType);
 }
+
+createVehicleType1(vehicleType: VehicleType): Observable<VehicleType> {
+  console.log('Enviando al backend:', vehicleType); // ← Log para ver qué se envía
+  return this.http.post<VehicleType>(`${this.API_BASE}/vehicle-types`, vehicleType);
+}
+
 
 // Opcional: Actualizar tipo de vehículo
 updateVehicleType(id: number, vehicleType: VehicleType): Observable<VehicleType> {
@@ -1001,7 +1015,7 @@ saveClient01(clientData: any, spaceKey: string): Client {
 }
 
 
-saveClient(clientData: any, spaceKey: string): Client {
+saveClient00(clientData: any, spaceKey: string): Client {
   const spaces = this.spacesSubject.value;
   const clients = this.clientsSubject.value;
   const targetSpace = spaces[spaceKey];
@@ -1057,7 +1071,76 @@ saveClient(clientData: any, spaceKey: string): Client {
   return client;
 }
 
+saveClient(clientData: any, spaceKey: string): Client {
+  const spaces = this.spacesSubject.value;
+  const clients = this.clientsSubject.value;
+  const targetSpace = spaces[spaceKey];
 
+  if (!targetSpace) throw new Error('Espacio no encontrado');
+  if (targetSpace.occupied) throw new Error('El espacio ya está ocupado');
+
+  // GENERAR SOLO CODE
+  const code = this.generateClientCode();
+
+  // TELÉFONO: usar exactamente lo que el usuario escribió (con + si lo puso)
+  let phoneIntl = (clientData.phone || '').trim();
+
+  // Limpiar solo caracteres no válidos (mantener + y números)
+  phoneIntl = phoneIntl.replace(/[^0-9+]/g, '');
+
+  // Si no tiene + → asumir Argentina (+54)
+ /* if (!phoneIntl.startsWith('+')) {
+    phoneIntl = '+54' + phoneIntl;
+  }*/
+
+  // Validación básica internacional (8-15 dígitos totales)
+  const digitsOnly = phoneIntl.replace(/[^0-9]/g, '');
+  if (digitsOnly.length < 8 || digitsOnly.length > 15) {
+    throw new Error('Número de teléfono inválido (debe tener entre 8 y 15 dígitos)');
+  }
+
+  const category = clientData.category || 'AUTO';
+  const price = clientData.price && clientData.price > 0 ? clientData.price : 35000;
+
+  // ID TEMPORAL para local
+  const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+  const client: Client = {
+    id: tempId,
+    code,
+    dni: clientData.dni?.trim() || '',
+    name: clientData.name.trim(),
+    phoneIntl,               // ← Ahora es correcto: +53..., +54..., etc.
+    phoneRaw: clientData.phone.trim(),  // Lo que el usuario escribió originalmente
+    vehicle: clientData.vehicle?.trim() || '',
+    plate: clientData.plate?.trim() || '',
+    notes: clientData.notes?.trim() || '',
+    spaceKey,
+    qrText: '',
+    category,
+    price,
+    entryTimestamp: Date.now()
+  };
+
+  // Asignar al espacio
+  targetSpace.occupied = true;
+  targetSpace.clientId = tempId;
+  targetSpace.startTime = Date.now();
+  targetSpace.hold = false;
+  targetSpace.client = client;
+
+  // Generar QR
+  client.qrText = this.buildQRText(client, targetSpace);
+
+  // Guardar localmente
+  clients[tempId] = client;
+
+  this.spacesSubject.next({ ...spaces });
+  this.clientsSubject.next({ ...clients });
+  this.saveAll();
+
+  return client;
+}
 
 
 private saveToLocalStorage(key: string, data: any): void {
@@ -1135,8 +1218,19 @@ releaseSpace(spaceKey: string): Observable<any> {
   const clientId = space.clientId;
 
   // 1. Liberar localmente
-  if (clientId) {
+ /* if (clientId) {
     delete clients[clientId];
+    this.clientsSubject.next({ ...clients });
+  }*/
+
+  if (clientId) {
+    const client = clients[clientId];
+    if (client) {
+      //client.spaceKey = null;
+      client.exitTimestamp = Date.now();  // ← REGISTRAR SALIDA
+      // NO limpiar price, vehicle, etc.
+    }
+
     this.clientsSubject.next({ ...clients });
   }
 
@@ -1279,7 +1373,7 @@ resetData2(): any {
   });
 }
 
-resetData(): Observable<any> {
+resetData00(): Observable<any> {
   const spaces = this.spacesSubject.value;
 
   console.log('Cerrando día: liberando espacios localmente...');
@@ -1331,6 +1425,70 @@ resetData(): Observable<any> {
     })
   );
 }
+
+resetData(): Observable<any> {
+  const spaces = this.spacesSubject.value;
+
+  console.log('Cerrando día: liberando espacios localmente...');
+
+  // 1. Liberar espacios localmente
+  Object.values(spaces).forEach(space => {
+    space.occupied = false;
+    space.clientId = null;
+    space.startTime = null;
+    space.hold = false;
+    space.client = null;
+  });
+
+  this.spacesSubject.next({ ...spaces });
+
+  // 2. NO limpiar clientes completamente (solo limpiar spaceKey localmente)
+  const clients = this.clientsSubject.value;
+  Object.values(clients).forEach(client => {
+    client.spaceKey = null;  // ← SOLO esto
+    client.entryTimestamp = null;
+    // NO borrar el resto de propiedades
+  });
+
+  this.clientsSubject.next({ ...clients });
+
+  this.saveAll();  // Guarda estado limpio en localStorage temporalmente
+
+  console.log('Espacios liberados y spaceKey reseteado en clientes localmente');
+
+  // 3. Liberar en backend y recargar TODO
+  return this.resetDataInBackend().pipe(
+    switchMap(() => {
+      console.log('Backend confirmado. Recargando espacios y clientes frescos...');
+
+      // Recargar espacios
+      return this.loadSpacesFromBackend().pipe(
+        switchMap((spacesFromBackend: Space[]) => {
+          const spacesMap: { [key: string]: Space } = {};
+          spacesFromBackend.forEach(s => spacesMap[s.key] = s);
+          this.spacesSubject.next(spacesMap);
+
+          // Recargar clientes (ya vienen con spaceKey = null)
+          return this.loadClientsFromBackend();
+        }),
+        tap((clientsFromBackend: Client[]) => {
+          const clientsMap: { [key: string]: Client } = {};
+          clientsFromBackend.forEach(c => clientsMap[c.id.toString()] = c);
+          this.clientsSubject.next(clientsMap);
+
+          // Guardar en localStorage los datos REALES del backend
+          this.saveAll();
+
+          console.log('localStorage actualizado con datos frescos del backend');
+        })
+      );
+    })
+  );
+}
+
+
+
+
 
   // Gestión de búsqueda
   setSearchTerm(term: string): void {

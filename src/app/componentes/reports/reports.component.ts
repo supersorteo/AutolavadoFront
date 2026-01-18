@@ -33,7 +33,7 @@ pageSizeDaily = 5;
   clave: string;
  // clover: number | null;
   clover: string;
-  metodoPago: 'efectivo' | 'credito' | 'prepago'| 'qr';
+  metodoPago: 'efectivo' | 'credito' | 'prepago'| 'qr'| 'debito'| 'S/Cargo'| 'scaneo';
 } = {
   valor: 0,
   clave: '',
@@ -69,8 +69,8 @@ pageSizeDaily = 5;
   editClientHeaderMessage = '';
   private editClientHeaderTimer: any = null;
 
-  //private API_BASE = 'http://localhost:8080/api'
-  private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
+  private API_BASE = 'http://localhost:8080/api'
+  //private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
   showReportsList = false;
 
 scheduledTime: string = ''; // Hora guardada (ej. "23:30")
@@ -686,7 +686,7 @@ get totalPagesDaily0(): number {
     return Math.ceil(this.filteredClients.length / this.pageSize);
   }
 
-  getElapsedTimeForClient(client: Client): string {
+  getElapsedTimeForClient0(client: Client): string {
   if (!client.entryTimestamp) return 'N/A';
   const ms = Date.now() - client.entryTimestamp;
   const mins = Math.floor(ms / 60000);
@@ -694,6 +694,30 @@ get totalPagesDaily0(): number {
   const min = mins % 60;
   return hours > 0 ? `${hours}h ${min}m` : `${min}m`;
 }
+
+getElapsedTimeForClient(client: Client): string {
+  if (!client.entryTimestamp) return 'N/A';
+
+  // Convertir a number si es string (del backend)
+  let entryTime: number;
+  if (typeof client.entryTimestamp === 'string') {
+    entryTime = new Date(client.entryTimestamp).getTime();
+  } else {
+    entryTime = client.entryTimestamp;
+  }
+
+  if (isNaN(entryTime)) return 'N/A';  // Seguridad extra
+
+  const ms = Date.now() - entryTime;
+  const mins = Math.floor(ms / 60000);
+  const hours = Math.floor(mins / 60);
+  const min = mins % 60;
+
+  return hours > 0 ? `${hours}h ${min}m` : `${min}m`;
+}
+
+
+
 
   get pageNumbers(): number[] {
     const total = this.totalPages;
@@ -1265,6 +1289,65 @@ showErrorToast(message: string): void {
   bsToast.show();
 
   toast.addEventListener('hidden.bs.toast.toast', () => toast.remove());
+}
+
+getSpaceByKey(spaceKey: string | null): Space | undefined {
+  if (!spaceKey) return undefined;
+  return this.autolavadoService.spacesSubject.value[spaceKey];
+}
+
+
+eliminarServicio(client: Client): void {
+  const clientName = client.name || 'este cliente';
+  const vehicle = client.vehicle ? `(${client.vehicle})` : '';
+
+  const confirmDelete = confirm(
+    `¿Estás seguro de ELIMINAR DEFINITIVAMENTE el servicio de ${clientName} ${vehicle}?\n\n` +
+    `Esto borrará el registro del cliente de la base de datos y liberará el espacio si está ocupado.\n` +
+    `No se puede recuperar.`
+  );
+
+  if (!confirmDelete) return;
+
+  console.log(`Eliminando servicio del cliente ID: ${client.id} de la BD`);
+
+  const spaceKey = client.spaceKey;
+  const space = this.getSpaceByKey(spaceKey);
+
+  if (space && space.occupied) {
+    // 1. Si el espacio está ocupado → liberar primero
+    console.log(`Espacio ${spaceKey} ocupado. Liberando antes de eliminar cliente...`);
+
+    this.autolavadoService.releaseSpace(spaceKey).subscribe({
+      next: () => {
+        console.log('Espacio liberado correctamente');
+        // 2. Ahora eliminar el cliente de la BD
+        this.eliminarClienteDeBD(client.id, clientName);
+      },
+      error: (err) => {
+        console.error('Error al liberar espacio antes de eliminar:', err);
+        alert('Error al liberar el espacio. El servicio no se eliminó.');
+      }
+    });
+  } else {
+    // Espacio ya liberado → eliminar directamente de la BD
+    this.eliminarClienteDeBD(client.id, clientName);
+  }
+}
+
+private eliminarClienteDeBD(clientId: number, clientName: string): void {
+  this.autolavadoService.deleteClientFromBackend(clientId).subscribe({
+    next: () => {
+      console.log(`Cliente ${clientId} (${clientName}) eliminado correctamente de la BD`);
+      // No necesitas hacer nada más: deleteClientFromBackend ya recarga spaces y clients
+      // La tabla se actualiza sola porque dailyClients$ depende de clients$
+      this.showSuccessToast(`Servicio de ${clientName} eliminado correctamente`);
+    },
+    error: (err) => {
+      console.error('Error al eliminar cliente de la BD:', err);
+      this.showErrorToast('Error al eliminar el servicio. Intenta de nuevo.');
+    }
+  });
 }
 
 

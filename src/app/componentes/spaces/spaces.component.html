@@ -259,9 +259,8 @@
 
 
 
-
           <!-- VEHÍCULO -->
-          <div class="col-md-6">
+          <!--div-- class="col-md-6">
             <label class="form-label">Modelo de vehículo *</label>
 
             <select
@@ -301,8 +300,44 @@
                 </option>
               </optgroup>
             </select>
+
+            <div class="input-group-append">
+  <button
+    class="btn btn-outline-info"
+    type="button"
+    (click)="openVehicleAside()"
+    title="Ver / Agregar vehículos">
+    <i class="fas fa-list"></i>
+  </button>
+</div>
             <div class="form-text">Se aplicará el precio según la categoría</div>
-          </div>
+          </!--div-->
+
+
+          <div class="col-md-6">
+  <label class="form-label">Modelo de vehículo *</label>
+
+  <div class="input-group input-group-lg">
+    <input
+      formControlName="vehicle"
+      class="form-control form-control-dark"
+      placeholder="Seleccione un vehículo desde la lista"
+      readonly
+      required />
+
+
+
+    <button
+      class="btn btn-outline-info"
+      type="button"
+      (click)="openVehicleAside()"
+      title="Abrir lista de vehículos">
+      <i class="fas fa-list me-2"></i> Elegir
+    </button>
+  </div>
+
+  <div class="form-text">Precio se aplicará automáticamente según el vehículo seleccionado</div>
+</div>
 
           <!-- PRECIO -->
           <div class="col-md-6">
@@ -316,6 +351,7 @@
                 style="background: #00040a; border: 1px solid #6d7b92; color: #edeff0;"
                 min="1"
                 required
+
                 placeholder="Precio">
             </div>
             <div class="form-text">Precio por defecto según vehículo. Puedes modificarlo.</div>
@@ -329,7 +365,7 @@
           </div>
 
             <!-- TELÉFONO -->
-          <div class="col-md-6">
+          <!--div-- class="col-md-6">
             <label class="form-label">Teléfono (Argentina) *</label>
             <input
               formControlName="phone"
@@ -342,7 +378,66 @@
                  class="text-danger small">
               Ingresá un teléfono válido (8-10 dígitos)
             </div>
-          </div>
+          </!--div-->
+
+      <!--div-- class="col-md-6">
+  <label class="form-label">Teléfono *</label>
+  <div class="input-group input-group-lg">
+    <span class="input-group-text bg-dark border-secondary d-flex align-items-center gap-2">
+      <span class="fs-4">{{phoneFlag}}</span>
+      <span class="fw-bold">{{phoneCode}}</span>
+      <span class="ms-1 text-truncate" style="max-width: 120px;">{{phoneCountry}}</span>
+    </span>
+    <input
+      formControlName="phone"
+      class="form-control form-control-dark"
+      placeholder="Ej: +5359874125 o 1123456789"
+      (input)="onPhoneInput($event)"
+      required />
+    <span class="input-group-text bg-transparent border-0">
+      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
+    </span>
+  </div>
+  <div class="form-text">
+    Escribe con o sin +. El país se fija una vez detectado el código.
+  </div>
+  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
+    Número inválido para {{phoneCountry}} (debe tener exactamente {{countryPhonePatterns[detectedCountryCode || '54']?.localDigits}} dígitos)
+  </div>
+</!--div-->
+
+
+<div class="col-md-6">
+  <label class="form-label">Teléfono *</label>
+  <div class="input-group input-group-lg">
+    <span class="input-group-text bg-dark border-secondary d-flex align-items-center gap-2">
+      <span class="fs-4">{{phoneFlag}}</span>
+      <span class="fw-bold">{{phoneCode}}</span>
+      <span class="ms-1 text-truncate" style="max-width: 120px;">{{phoneCountry}}</span>
+    </span>
+    <input
+      formControlName="phone"
+      class="form-control form-control-dark"
+      placeholder="Ej: +541126911817 o 1126911817"
+      (input)="onPhoneInput($event)"
+      required />
+    <span class="input-group-text bg-transparent border-0">
+      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
+    </span>
+  </div>
+  <div class="form-text">
+    Escribe con o sin +. Se detecta el país y valida la longitud exacta.
+  </div>
+  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
+    Número inválido para {{phoneCountry}} (debe tener exactamente {{countryPhonePatterns[detectedCountryCode || '54']?.localDigits}} dígitos después del código)
+  </div>
+</div>
+
+
+
+
+
+
 
           <!-- NOTAS -->
           <div class="col-12">
@@ -385,6 +480,141 @@
             <div class="small text-dark mt-2">{{qrCaption}}</div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<div *ngIf="showVehicleAside" class="position-fixed top-0 end-0 h-100 bg-gradient-dark text-white shadow-2xl" style="width: 420px; z-index: 1060; overflow-y: auto; border-left: 5px solid #0ea5e9;">
+  <div class="p-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h4 class="mb-0 fw-bold text-info">
+        <i class="fas fa-car-side me-2"></i> Gestión de Vehículos
+      </h4>
+      <button class="btn btn-sm btn-outline-light" (click)="closeVehicleAside()">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- Filtro (ahora funciona) -->
+  <div class="mb-4">
+      <div class="input-group input-group-lg">
+        <span class="input-group-text bg-secondary border-0 text-info">
+          <i class="fas fa-search"></i>
+        </span>
+        <input
+          type="text"
+          class="form-control bg-dark text-white border-secondary"
+          [(ngModel)]="vehicleFilter"
+          placeholder="Filtrar por modelo o categoría..."
+          style="pointer-events: auto !important;">
+      </div>
+    </div>
+
+    <!-- Botón agregar nuevo -->
+    <button class="btn btn-success w-100 mb-4 shadow" (click)="openAddVehicleModal()">
+      <i class="fas fa-plus me-2"></i> Agregar Nuevo Vehículo
+    </button>
+
+    <!-- Tabla paginada -->
+    <table class="table table-dark table-striped table-hover">
+      <thead>
+        <tr>
+          <th>Modelo</th>
+          <th>Categoría</th>
+          <th>Precio</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let v of paginatedVehicles"
+            class="cursor-pointer hover-bg-primary"
+            (click)="selectVehicle(v)">
+          <td>{{v.model}}</td>
+          <td>
+            <span class="badge" [ngClass]="{
+              'bg-primary': v.category === 'SUV',
+              'bg-success': v.category === 'AUTO',
+              'bg-warning': v.category === 'PICKUP',
+              'bg-danger': v.category === 'ALTO PORTE',
+              'bg-secondary': v.category === 'MOTO'
+            }">
+              {{v.category}}
+            </span>
+          </td>
+          <td>${{v.price.toLocaleString()}}</td>
+          <td>
+            <button class="btn btn-sm btn-danger" (click)="deleteVehicle(v.id, $event)">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+
+        <tr *ngIf="paginatedVehicles.length === 0">
+          <td colspan="4" class="text-center text-muted py-4">
+            No hay vehículos que coincidan con el filtro
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Paginación simple -->
+    <nav *ngIf="filteredVehicles.length > vehiclePageSize">
+      <ul class="pagination pagination-sm justify-content-center">
+        <li class="page-item" [class.disabled]="currentVehiclePage === 1">
+          <button class="page-link" (click)="currentVehiclePage = currentVehiclePage - 1">Anterior</button>
+        </li>
+        <li *ngFor="let page of vehiclePageNumbers" class="page-item" [class.active]="page === currentVehiclePage">
+          <button class="page-link" (click)="currentVehiclePage = page">{{page}}</button>
+        </li>
+        <li class="page-item" [class.disabled]="currentVehiclePage === totalVehiclePages">
+          <button class="page-link" (click)="currentVehiclePage = currentVehiclePage + 1">Siguiente</button>
+        </li>
+      </ul>
+    </nav>
+  </div>
+</div>
+
+<!-- Modal para agregar nuevo tipo de vehículo -->
+<div *ngIf="showAddVehicleModal" class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.7); z-index: 2070;">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark text-white border-0 shadow-lg">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Nuevo Vehículo</h5>
+        <button type="button" class="btn-close btn-close-white" (click)="showAddVehicleModal = false"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Modelo *</label>
+          <input type="text" class="form-control bg-secondary text-white border-secondary" [(ngModel)]="newVehicleModel" autofocus>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Categoría *</label>
+          <select class="form-select bg-secondary text-white border-secondary" [(ngModel)]="newVehicleCategory" (change)="updatePriceFromCategory()">
+            <option value="SUV">SUV</option>
+            <option value="AUTO">AUTO</option>
+            <option value="PICKUP">PICKUP</option>
+            <option value="ALTO PORTE">ALTO PORTE</option>
+            <option value="MOTO">MOTO</option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Precio *</label>
+          <input type="number" class="form-control bg-secondary text-white border-secondary" [(ngModel)]="newVehiclePrice" min="1000">
+        </div>
+      </div>
+
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-outline-secondary" (click)="showAddVehicleModal = false">Cancelar</button>
+        <button type="button" class="btn btn-primary" (click)="saveNewVehicle()" [disabled]="!newVehicleModel.trim()">
+          Guardar
+        </button>
       </div>
     </div>
   </div>
@@ -632,13 +862,14 @@
               <td><span class="badge bg-secondary">{{client.code || '-'}}</span></td>
               <td>{{client.spaceKey || '-'}}</td>
               <td>
-                <span *ngIf="getSpaceByKey(client.spaceKey)?.startTime; else noVisit">
-                  {{formatDateOnly(getSpaceByKey(client.spaceKey)?.startTime)}}
-                </span>
-                <ng-template #noVisit>
-                  <span class="text-muted">-</span>
-                </ng-template>
-              </td>
+  <span *ngIf="client.entryTimestamp || client.exitTimestamp; else noVisit">
+    {{ formatDateOnly(client.entryTimestamp ?? client.exitTimestamp) }}
+  </span>
+  <ng-template #noVisit>
+    <span class="text-muted">-</span>
+  </ng-template>
+</td>
+
               <td>
                 <div class="d-flex gap-1 justify-content-center">
                   <!--button-- class="btn btn-warning btn-sm" title="Editar" (click)="editClient(client)">
