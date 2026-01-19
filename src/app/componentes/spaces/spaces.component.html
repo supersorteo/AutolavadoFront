@@ -225,7 +225,7 @@
         <div *ngIf="saveClientHeaderMessage" style="color: #22c55e;">
             {{ saveClientHeaderMessage }}
           </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <button type="button" class="btn-close btn-close-white" (click)="closeClientModal()" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <form [formGroup]="clientForm" class="row g-3">
@@ -407,7 +407,7 @@
 </!--div-->
 
 
-<div class="col-md-6">
+<!--div-- class="col-md-6">
   <label class="form-label">Teléfono *</label>
   <div class="input-group input-group-lg">
     <span class="input-group-text bg-dark border-secondary d-flex align-items-center gap-2">
@@ -431,10 +431,45 @@
   <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
     Número inválido para {{phoneCountry}} (debe tener exactamente {{countryPhonePatterns[detectedCountryCode || '54']?.localDigits}} dígitos después del código)
   </div>
+</!--div-->
+
+
+<div class="col-md-6">
+  <label class="form-label">Teléfono *</label>
+
+  <div class="input-group input-group-lg">
+    <input
+      #phoneInput
+      formControlName="phone"
+      type="tel"
+      class="form-control form-control-dark"
+      placeholder="Ej: +541126911817 o 1126911817"
+      required />
+
+    <span class="input-group-text bg-transparent border-0">
+      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
+    </span>
+  </div>
+
+  <div class="form-text text-info">
+    País detectado: {{phoneFlag}} {{phoneCode}} {{phoneCountry || 'Escribe el número'}}
+  </div>
+
+  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
+    Teléfono inválido para el país seleccionado
+  </div>
+
+  <!--div-- *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
+  Número inválido para {{phoneCountry}}.
+  <span *ngIf="phoneCode === '+54'">
+    En Argentina debe tener 11 u 12 dígitos después del +54 (incluyendo el 9).
+    Ejemplos: +5491126911817 o +54935198765432
+  </span>
+  <span *ngIf="phoneCode !== '+54'">
+    Verifica la cantidad de dígitos para este país.
+  </span>
+</!--div-->
 </div>
-
-
-
 
 
 
@@ -856,7 +891,9 @@
               <td>{{client.id}}</td>
               <td>{{client.name}}</td>
               <td>{{client.dni || '-'}}</td>
-              <td>+{{client.phoneIntl}}</td>
+              <!--td>{{client.phoneIntl}}</!--td-->
+              <!--td>{{client.phoneIntl?.startsWith('+') ? client.phoneIntl : '+' + client.phoneIntl}}</td-->
+              <td>{{client.phoneIntl | formatPhone}}</td>
               <td>{{client.vehicle || '-'}}</td>
               <td>{{client.plate || '-'}}</td>
               <td><span class="badge bg-secondary">{{client.code || '-'}}</span></td>

@@ -362,3 +362,45 @@ img.rounded-circle:hover {
   background-color: #000000;
   color: #0284c7;
 }
+
+
+
+/* Alineado perfecto del dropdown de intl-tel-input */
+.iti__country-list {
+  width: 300px !important;
+  max-height: 300px !important;
+  overflow-y: auto !important;
+  padding: 0 !important;
+  border-radius: 0.375rem !important;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5) !important;
+  background-color: #00040a !important; /* tu fondo oscuro */
+  border: 1px solid #6d7b92 !important;
+}
+
+.iti__country {
+  padding: 0.5rem 1rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+}
+
+.iti__flag-box {
+  width: 30px !important;
+  text-align: center !important;
+}
+
+.iti__country-name {
+  color: #edeff0 !important;
+}
+
+.iti__dial-code {
+  color: #6d7b92 !important;
+  margin-left: auto !important;
+}
+
+/* Hover y seleccionado */
+.iti__country:hover,
+.iti__country.iti__highlighted {
+  background-color: #0ea5e9 !important;
+  color: white !important;
+}

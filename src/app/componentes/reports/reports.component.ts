@@ -6,12 +6,13 @@ import { Client, Report, Space, Subsuelo } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
 import { HttpClient } from '@angular/common/http';
 import { ReportsListComponent } from "../reports-list/reports-list.component";
+import { FormatPhonePipe } from "../../services/format-phone.pipe";
 
 declare const bootstrap: any;
 @Component({
   selector: 'app-reports',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReportsListComponent],
+  imports: [CommonModule, FormsModule, ReportsListComponent, FormatPhonePipe],
   templateUrl: './reports.component.html',
   styleUrls: ['./reports.component.scss']
 })

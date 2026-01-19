@@ -8,13 +8,14 @@ import { AutolavadoService } from '../../services/autolavado.service';
 import { QrService } from '../../services/qr.service';
 import { ToastService } from '../../services/toast.service';
 
-
+import intlTelInput from 'intl-tel-input';
+import { FormatPhonePipe } from "../../services/format-phone.pipe";
 declare var bootstrap: any;
 
 @Component({
   selector: 'app-spaces',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, FormatPhonePipe],
   templateUrl:'./spaces.component.html',
   styleUrls: ['./spaces.component.scss']
 })
@@ -22,6 +23,7 @@ declare var bootstrap: any;
 export class SpacesComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   @ViewChild('occQRElm', { static: false }) occQRContainer!: ElementRef<HTMLDivElement>;
+  @ViewChild('phoneInput') phoneInput!: ElementRef<HTMLInputElement>;
   private searchTermSubject = new BehaviorSubject<string>('');
   newSpaceKey = '';
   selectedNewSubsuelo = '';
@@ -101,13 +103,24 @@ vehiclePageSize = 20;
 clientModalInstance: any = null;
 
 
-phoneCountry: string = 'Argentina';   // Nombre
-phoneFlag: string = '🇦🇷';            // Bandera
-phoneCode: string = '+54';            // ← NUEVO: mostrar el código
-phoneIsValid: boolean = false;
+//phoneCountry: string = 'Argentina';   // Nombre
+//phoneFlag: string = '🇦🇷';            // Bandera
+//phoneCode: string = '+54';            // ← NUEVO: mostrar el código
+//phoneIsValid: boolean = false;
 public detectedCountryCode: string | null = null;
 
 
+
+
+  private iti: any; // Instancia de intl-tel-input
+
+  phoneIsValid = false;
+  phoneCountry = '';
+  phoneFlag = '';
+  phoneCode = '';
+  isModalOpen = false;
+
+  isClientModalOpen = false;
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
@@ -289,7 +302,8 @@ this.clientForm.get('dni')?.valueChanges
 
               this.clientForm.patchValue({
                 name: client.name || '',
-                phone: client.phoneRaw || '',
+                //phone: client.phoneRaw || '',
+                phone: client.phoneIntl || client.phoneRaw || '',
                 plate: client.plate || '',
                 notes: client.notes || '',
                 vehicle: client.vehicle || ''
@@ -306,7 +320,8 @@ this.clientForm.get('dni')?.valueChanges
 
               this.clientForm.patchValue({
                 name: client.name || '',
-                phone: client.phoneRaw || '',
+                //phone: client.phoneRaw || '',
+                phone: client.phoneIntl || client.phoneRaw || '',
                 plate: client.plate || '',
                 notes: client.notes || '',
                 vehicle: client.vehicle || '',
@@ -342,6 +357,313 @@ this.clientForm.get('dni')?.valueChanges
   });
 
 }
+
+
+/*ngAfterViewInit(): void {
+    this.iti = intlTelInput(this.phoneInput.nativeElement, {
+      initialCountry: 'ar',
+      preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
+      utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
+      separateDialCode: true,       // Muestra el código separado
+      nationalMode: false,          // Siempre con +
+      formatOnDisplay: true,        // Formato bonito
+      autoPlaceholder: 'polite',
+      placeholderNumberType: 'MOBILE'
+    });
+
+    this.phoneInput.nativeElement.addEventListener('input', () => {
+    this.updatePhoneInfo();
+  });
+
+  // Evento cuando cambia el país desde el dropdown
+  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
+    this.updatePhoneInfo();
+  });
+
+
+
+    // Actualizar formControl y validación en tiempo real
+    this.phoneInput.nativeElement.addEventListener('input', () => {
+      const fullNumber = this.iti.getNumber(); // +5491126911817
+      const isValid = this.iti.isValidNumber();
+
+      this.clientForm.patchValue({ phone: fullNumber });
+      this.phoneIsValid = isValid;
+
+      const countryData = this.iti.getSelectedCountryData();
+      this.phoneCountry = countryData.name;
+      this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+      this.phoneCode = '+' + countryData.dialCode;
+
+      this.cdr.detectChanges(); // Forzar actualización visual
+    });
+
+    // Inicializar con valor existente (si hay)
+
+
+    const currentPhone = this.clientForm.value.phone;
+  if (currentPhone) {
+    this.iti.setNumber(currentPhone);
+    this.updatePhoneInfo();
+  }
+
+
+this.clientForm.get('phone')?.valueChanges.subscribe(newPhone => {
+    if (newPhone && this.iti) {
+      this.iti.setNumber(newPhone); // ← Esto fuerza que intl-tel-input detecte y cambie el país
+      this.updatePhoneInfo(); // Actualiza bandera, código, país y validación
+    }
+  });
+
+  }*/
+
+
+  ngAfterViewInit(): void {
+  this.iti = intlTelInput(this.phoneInput.nativeElement, {
+    initialCountry: 'ar',
+    preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
+    utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
+    separateDialCode: true,
+    nationalMode: false,
+    formatOnDisplay: true,
+    autoPlaceholder: 'polite',
+    placeholderNumberType: 'MOBILE'
+  });
+
+
+
+  // Escuchar input y cambio de país
+  this.phoneInput.nativeElement.addEventListener('input', () => this.updatePhoneInfo());
+  this.phoneInput.nativeElement.addEventListener('countrychange', () => this.updatePhoneInfo());
+
+this.phoneInput.nativeElement.addEventListener('input', () => {
+    this.updatePhoneInfo();
+  });
+
+  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
+    this.updatePhoneInfo();
+  });
+
+  // Escuchar cambios del formControl 'phone' (incluyendo patchValue desde DNI)
+  this.clientForm.get('phone')?.valueChanges.subscribe(newPhone => {
+    if (newPhone && this.iti) {
+      this.iti.setNumber(newPhone); // Fuerza que intl-tel-input detecte y cambie el país
+      this.updatePhoneInfo();       // Actualiza visuales
+    }
+  });
+}
+
+  private updatePhoneInfo0(): void {
+  const fullNumber = this.iti.getNumber();
+  const isValid = this.iti.isValidNumber();
+
+  this.clientForm.patchValue({ phone: fullNumber });
+  this.phoneIsValid = isValid;
+
+  const countryData = this.iti.getSelectedCountryData();
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + countryData.dialCode;
+
+  this.cdr.detectChanges(); // Forzar actualización visual
+}
+
+private updatePhoneInfo1(): void {
+  if (!this.iti) return;
+
+  const fullNumber = this.iti.getNumber();
+  const isValid = this.iti.isValidNumber();
+
+  this.phoneIsValid = isValid;
+
+  const countryData = this.iti.getSelectedCountryData();
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + countryData.dialCode;
+
+  this.cdr.detectChanges(); // Forzar actualización visual
+}
+
+
+private updatePhoneInfo2(): void {
+  if (!this.iti) return;
+
+  // Forzar que intl-tel-input devuelva el número completo con +
+  const fullNumber = this.iti.getNumber(); // Esto SIEMPRE incluye + y código si hay país detectado
+
+  // Si por algún motivo no tiene +, agregarlo manualmente usando el país actual
+  let safeFullNumber = fullNumber;
+  if (!safeFullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    safeFullNumber = '+' + countryData.dialCode + safeFullNumber;
+  }
+
+  const isValid = this.iti.isValidNumber();
+
+  // Guardar SIEMPRE el número completo con +
+  this.clientForm.patchValue({ phone: safeFullNumber }, { emitEvent: false });
+
+  this.phoneIsValid = isValid;
+
+  const countryData = this.iti.getSelectedCountryData();
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + countryData.dialCode;
+
+  this.cdr.detectChanges();
+}
+
+private updatePhoneInfo00(): void {
+  if (!this.iti) return;
+
+  const fullNumber = this.iti.getNumber(); // Número completo que devuelve la librería (ej: +54935198765432)
+
+  // Seguridad: si no tiene +, agregarlo usando el país actual
+  let safeFullNumber = fullNumber;
+  if (!safeFullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    safeFullNumber = '+' + countryData.dialCode + safeFullNumber;
+  }
+
+  // Extraer solo los dígitos locales (después del +54)
+  const localDigits = safeFullNumber.replace(/^\+54/, ''); // Quitar +54
+
+  let isValid = false;
+
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+
+  if (dialCode === '54') {
+    // Argentina móvil: acepta 10 o 11 dígitos locales (realista para todas provincias)
+    // - 10: formato estandar (9 + código 2-3 dígitos + resto)
+    // - 11: formato común escrito (9 + código 3 dígitos + 7 dígitos)
+    isValid = localDigits.length === 11 || localDigits.length === 12;
+  } else {
+    // Para otros países: usa la validación estricta de la librería
+    isValid = this.iti.isValidNumber();
+  }
+
+  // Guardar el número completo (con + y código)
+  this.clientForm.patchValue({ phone: safeFullNumber }, { emitEvent: false });
+
+  this.phoneIsValid = isValid;
+
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + dialCode;
+
+  this.cdr.detectChanges();
+}
+
+private updatePhoneInfo3(): void {
+  if (!this.iti) return;
+
+  // 1. Obtener el valor crudo del input (con posibles espacios/guiones al pegar)
+  const rawInput = this.phoneInput.nativeElement.value.trim();
+
+  // 2. Limpiar TODO menos números y el signo + (esto es clave para copiar/pegar)
+  const cleanedInput = rawInput.replace(/[^0-9+]/g, '');
+
+  // 3. Forzar que la librería use el número limpio
+  this.iti.setNumber(cleanedInput);
+
+  // 4. Ahora sí obtener el número completo formateado por la librería
+  const fullNumber = this.iti.getNumber(); // Siempre con + y código si hay país detectado
+
+  // 5. Seguridad extra: si no tiene +, agregarlo usando el país actual
+  let safeFullNumber = fullNumber;
+  if (!safeFullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    safeFullNumber = '+' + countryData.dialCode + safeFullNumber;
+  }
+
+  // 6. Validación personalizada para Argentina
+  const localDigits = safeFullNumber.replace(/^\+54/, ''); // Quitar +54
+  let isValid = false;
+
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+
+  if (dialCode === '54') {
+    // Argentina móvil: acepta 10 o 11 dígitos después del +54 (incluyendo el 9)
+    isValid = localDigits.length === 11 || localDigits.length === 12;
+  } else {
+    // Otros países: validación estricta de la librería
+    isValid = this.iti.isValidNumber();
+  }
+
+  // 7. Guardar SIEMPRE el número limpio y completo con +
+  this.clientForm.patchValue({ phone: safeFullNumber }, { emitEvent: false });
+
+  this.phoneIsValid = isValid;
+
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + dialCode;
+
+  this.cdr.detectChanges();
+  //this.phoneInput.nativeElement.value = this.iti.getNumber();
+}
+
+private updatePhoneInfo(): void {
+  if (!this.iti) return;
+
+  // 1. Tomar el valor crudo del input (puede tener espacios, guiones, etc.)
+  const rawValue = this.phoneInput.nativeElement.value.trim();
+
+  // 2. Limpiar: dejar solo números y el signo +
+  const cleanedValue = rawValue.replace(/[^0-9+]/g, '');
+
+  // 3. Pasar el valor limpio a la librería
+  this.iti.setNumber(cleanedValue);
+
+  // 4. Obtener el número limpio y formateado por la librería
+  const fullNumber = this.iti.getNumber();
+
+  // 5. Seguridad extra: si no tiene +, agregarlo usando el país actual
+  let safeFullNumber = fullNumber;
+  if (!safeFullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    safeFullNumber = '+' + countryData.dialCode + safeFullNumber;
+  }
+
+  // 6. Validación personalizada para Argentina
+  const localDigits = safeFullNumber.replace(/^\+54/, ''); // Quitar +54
+  let isValid = false;
+
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+
+  if (dialCode === '54') {
+    // Aceptamos 10 o 11 dígitos después del +54 (incluyendo el 9)
+    isValid = localDigits.length === 11 || localDigits.length === 12;
+  } else {
+    isValid = this.iti.isValidNumber();
+  }
+
+  // 7. Guardar el número completo (con + y código)
+  this.clientForm.patchValue({ phone: safeFullNumber }, { emitEvent: false });
+
+  this.phoneIsValid = isValid;
+
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + dialCode;
+
+  // Opcional: mostrar el número limpio y formateado en el input
+  this.phoneInput.nativeElement.value = this.iti.getNumber();
+
+  this.cdr.detectChanges();
+}
+
+
+
+
+
+  private getFlagEmoji(iso2: string): string {
+    if (!iso2) return '🌍';
+    return iso2.toUpperCase().replace(/./g, char => String.fromCodePoint(char.charCodeAt(0) + 127397));
+  }
 
 
 
@@ -698,7 +1020,7 @@ private detectCountryFromCode(code: string): void {
 }
 
 
-private limpiarEspaciosDeDiasAnteriores(): void {
+private limpiarEspaciosDeDiasAnteriores0(): void {
   const spaces = this.autolavadoService.spacesSubject.value;
   const clients = this.autolavadoService.clientsSubject.value;
 
@@ -739,7 +1061,7 @@ private limpiarEspaciosDeDiasAnteriores(): void {
     this.autolavadoService.saveAll();
 
     // Liberar en backend (tu método ya limpia clientes también)
-    this.autolavadoService.resetDataInBackend().subscribe({
+    this.autolavadoService.resetData().subscribe({
       next: () => {
         console.log('Backend sincronizado: espacios liberados');
         this.filterSpaces();
@@ -755,7 +1077,40 @@ private limpiarEspaciosDeDiasAnteriores(): void {
   }
 }
 
+private limpiarEspaciosDeDiasAnteriores(): void {
+  const hoyInicio = new Date();
+  hoyInicio.setHours(0, 0, 0, 0);
+  const hoyTimestamp = hoyInicio.getTime();
 
+  let necesitaLiberar = false;
+
+  // Primero: verificar si hay algo que limpiar (esto es solo para log, no modifica nada)
+  Object.values(this.autolavadoService.spacesSubject.value).forEach(space => {
+    if (space.occupied && space.startTime && space.startTime < hoyTimestamp) {
+      console.log(`Espacio ${space.key} ocupado desde día anterior → necesita reset completo`);
+      necesitaLiberar = true;
+    }
+  });
+
+  if (necesitaLiberar) {
+    console.log('Días anteriores detectados → ejecutando reset completo (local + backend + recarga)');
+
+    // Llamar al método completo: limpia local, backend y RECARGA todo fresco
+    this.autolavadoService.resetData().subscribe({
+      next: () => {
+        console.log('Reset automático completado: espacios liberados y datos recargados');
+        this.filterSpaces();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.warn('Error en reset automático', err);
+        // Opcional: alert o toast
+      }
+    });
+  } else {
+    console.log('Todos los espacios ocupados son de hoy → nada que limpiar');
+  }
+}
 
 
 private loadDataFromBackend01(): void {
@@ -979,6 +1334,18 @@ closeClientsDb(): void {
   this.filteredClientsAdmin = [];
 }
 
+
+closeClientModal(): void {
+  this.isClientModalOpen = false;
+  this.clientForm.reset();
+  this.whatsappLink = '';
+
+  if (this.iti) {
+    this.iti.setCountry('ar');
+    this.iti.setNumber('');
+    this.updatePhoneInfo();
+  }
+}
 
 filterClientsAdmin(): void {
   if (!this.searchTermClients.trim()) {
@@ -1270,9 +1637,21 @@ getFormattedDate(timestamp: number | null | undefined): string {
 
     this.showModal('occupiedModal');
   } else {
+    this.isClientModalOpen = true;
     this.clientForm.reset();
     this.whatsappLink = '';
-    this.showModal('clientModal');
+    //this.showModal('clientModal');
+
+    setTimeout(() => {
+      if (this.iti && this.phoneInput?.nativeElement) {
+        this.iti.setCountry('ar'); // Volver a Argentina por defecto
+        this.iti.setNumber('');    // Limpiar número
+        this.updatePhoneInfo();    // Actualizar visuales (bandera, código, país)
+      }
+    }, 300);
+
+this.showModal('clientModal');
+
   }
 }
 
@@ -1388,7 +1767,7 @@ saveClient0(): void {
   }
 }
 
-saveClient1(): void {
+saveClient(): void {
   if (this.clientForm.invalid) {
     alert('Por favor completa todos los campos obligatorios.');
     return;
@@ -1401,10 +1780,15 @@ saveClient1(): void {
     const category = selectedVehicle?.category || 'AUTO';
     const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
 
+const phoneIntl = this.clientForm.value.phone || ''; // Ahora SIEMPRE tendrá +53... o +54...
+const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';// 27783 (opcional)
+
     const localClientData = {
       ...this.clientForm.value,
       category,
-      price
+      price,
+      phoneIntl,
+      phoneRaw
     };
 
     // GUARDAR EN LOCAL (genera tempId)
@@ -1484,7 +1868,7 @@ saveClient1(): void {
   }
 }
 
-saveClient(): void {
+saveClient1(): void {
   if (this.clientForm.invalid) {
     alert('Por favor completa todos los campos obligatorios.');
     return;
@@ -1497,19 +1881,15 @@ saveClient(): void {
     const category = selectedVehicle?.category || 'AUTO';
     const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
 
-    const phoneData = this.clientForm.value.phone; // Objeto completo
-
-const phoneIntl = phoneData?.number || '';               // +541126911817
-const phoneRaw = phoneData?.nationalNumber || '';        // 1126911817
-const countryCode = phoneData?.countryCode || 'AR';
+    const fullPhone = this.iti.getNumber(); // Número completo con + y código correcto
+    const localPhone = this.iti.getNumber().replace('+' + this.iti.getSelectedCountryData().dialCode, ''); // Número local
 
     const localClientData = {
       ...this.clientForm.value,
       category,
       price,
-      phoneIntl,
-  phoneRaw,
-  countryCode
+      phoneIntl: fullPhone,
+      phoneRaw: localPhone
     };
 
     // GUARDAR EN LOCAL (genera tempId)

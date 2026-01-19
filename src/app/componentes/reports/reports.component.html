@@ -155,7 +155,9 @@
             <td>
               <span class="badge bg-info">{{$any(client).spaceDisplayName}}</span>
             </td>
-            <td>+{{client.phoneIntl}}</td>
+            <!--td>{{client.phoneIntl}}</td-->
+            <td>{{client.phoneIntl | formatPhone}}</td>
+            <!--td>{{client.phoneIntl?.startsWith('+') ? client.phoneIntl : '+' + client.phoneIntl}}</td-->
             <td>{{client.vehicle || '-'}}</td>
             <td>
       <span class="badge" [ngClass]="{
