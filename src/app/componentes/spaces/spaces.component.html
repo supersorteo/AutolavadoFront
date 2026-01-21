@@ -522,12 +522,12 @@
 
 
 
-<div *ngIf="showVehicleAside" class="position-fixed top-0 end-0 h-100 bg-gradient-dark text-white shadow-2xl" style="width: 420px; z-index: 1060; overflow-y: auto; border-left: 5px solid #0ea5e9;">
+<div *ngIf="showVehicleAside" class="position-fixed top-0 end-0 h-100 bg-gradient-dark text-white shadow-2xl" style="width: 480px; z-index: 1060; overflow-y: auto; border-left: 0.5px solid #dfe1e160;background-color: #000000c3;">
   <div class="p-4">
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
-      <h4 class="mb-0 fw-bold text-info">
-        <i class="fas fa-car-side me-2"></i> Gestión de Vehículos
+      <h4 >
+       Gestor de vehículos
       </h4>
       <button class="btn btn-sm btn-outline-light" (click)="closeVehicleAside()">
         <i class="fas fa-times"></i>
@@ -550,7 +550,15 @@
     </div>
 
     <!-- Botón agregar nuevo -->
-    <button class="btn btn-success w-100 mb-4 shadow" (click)="openAddVehicleModal()">
+    <div class="vehicle-type-filters mb-3">
+      <button type="button" class="vehicle-type-btn" [class.active]="selectedVehicleCategory === 'SUV'" (click)="setVehicleCategoryFilter('SUV')">SUV</button>
+      <button type="button" class="vehicle-type-btn" [class.active]="selectedVehicleCategory === 'AUTO'" (click)="setVehicleCategoryFilter('AUTO')">AUTO</button>
+      <button type="button" class="vehicle-type-btn" [class.active]="selectedVehicleCategory === 'PICKUP'" (click)="setVehicleCategoryFilter('PICKUP')">PICKUP</button>
+      <button type="button" class="vehicle-type-btn" [class.active]="selectedVehicleCategory === 'ALTO PORTE'" (click)="setVehicleCategoryFilter('ALTO PORTE')">ALTO PORTE</button>
+      <button type="button" class="vehicle-type-btn" [class.active]="selectedVehicleCategory === 'MOTO'" (click)="setVehicleCategoryFilter('MOTO')">MOTO</button>
+    </div>
+
+    <button class="btn btn-success w-100 mb-4 shadow btn-add-vehicle" (click)="openAddVehicleModal()">
       <i class="fas fa-plus me-2"></i> Agregar Nuevo Vehículo
     </button>
 

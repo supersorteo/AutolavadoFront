@@ -95,6 +95,7 @@ newVehiclePrice = 35000; // Valor por defecto
 
 showVehicleAside = false;          // Abre/cierra el aside lateral
 vehicleFilter = '';                // Para filtrar la tabla en el aside
+selectedVehicleCategory = '';      // Filtro por tipo en el aside
 showAddVehicleModal = false;
 
 currentVehiclePage = 1;
@@ -1300,12 +1301,23 @@ onVehicleInput(event: Event): void {
 
 
 get filteredVehicles(): VehicleType[] {
-  if (!this.vehicleFilter.trim()) return this.vehicles;
   const term = this.vehicleFilter.toLowerCase().trim();
-  return this.vehicles.filter(v =>
-    v.model.toLowerCase().includes(term) ||
-    v.category.toLowerCase().includes(term)
-  );
+  return this.vehicles.filter(v => {
+    const matchesText = !term ||
+      v.model.toLowerCase().includes(term) ||
+      v.category.toLowerCase().includes(term);
+
+    const matchesCategory = !this.selectedVehicleCategory ||
+      v.category === this.selectedVehicleCategory;
+
+    return matchesText && matchesCategory;
+  });
+}
+
+setVehicleCategoryFilter(category: string): void {
+  this.selectedVehicleCategory =
+    this.selectedVehicleCategory === category ? '' : category;
+  this.currentVehiclePage = 1;
 }
 
 // Abre modal para agregar nuevo desde el aside
