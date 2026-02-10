@@ -34,6 +34,7 @@ export interface Client {
   clover?: number | null;
   entryTimestamp?: number;
   exitTimestamp?: any;
+  lastDayClosed?:any;
 }
 
 export interface QRData {

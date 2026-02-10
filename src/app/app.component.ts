@@ -3,7 +3,7 @@ import { Component } from '@angular/core';
 import { SpacesComponent } from "./componentes/spaces/spaces.component";
 import { ReportsComponent } from "./componentes/reports/reports.component";
 import { ArribaComponent } from "./componentes/arriba/arriba.component";
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 
 
@@ -25,21 +25,26 @@ export class AppComponent {
   isCheckingAuth = true;
   //private apiUrl = "http://localhost:8080";
   private apiUrl = "https://excellsiorback-production.up.railway.app"
+  token = '';
 
   constructor(private http: HttpClient) {
-
-
-    const saved = localStorage.getItem('auth');
-    if (saved) {
-      const auth = JSON.parse(saved);
-      this.tryLogin(auth.username, auth.password, true);
-    } else {
-      this.isCheckingAuth = false; // No hay credenciales → mostrar login directamente
-    }
+      this.checkAuth();
 
   }
 
-  login() {
+private checkAuth() {
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      this.token = savedToken;
+      this.verifyToken();
+    } else {
+      this.isCheckingAuth = false; // Sin token → mostrar login
+    }
+  }
+
+
+
+login() {
     if (!this.username || !this.password) {
       this.errorMessage = 'Ingresá usuario y contraseña';
       return;
@@ -48,31 +53,41 @@ export class AppComponent {
     this.isLoading = true;
     this.errorMessage = '';
 
-    this.tryLogin(this.username, this.password);
-  }
-
-  private tryLogin0(username: string, password: string, silent: boolean = false) {
-    const authHeader = 'Basic ' + btoa(username + ':' + password);
-
-    this.http.get(`${this.apiUrl}/api/auth/users`, {
-      headers: { Authorization: authHeader }
+    this.http.post(`${this.apiUrl}/api/auth/login`, {
+      username: this.username,
+      password: this.password
     }).subscribe({
-      next: () => {
-        // Login exitoso
+      next: (response: any) => {
+        this.token = response.token;
+        localStorage.setItem('token', this.token);
         this.isLoggedIn = true;
-        //localStorage.setItem('auth', JSON.stringify({ username, password }));
-         localStorage.setItem('auth', JSON.stringify({ username }));
-       /* if (!silent) {
-          alert('¡Bienvenido!');
-        }*/
+        this.isCheckingAuth = false;
+        this.isLoading = false;
+        this.username = '';
+        this.password = '';
       },
       error: (err) => {
+        this.errorMessage = err.error?.error || 'Credenciales inválidas';
         this.isLoading = false;
-        this.errorMessage = 'Usuario o contraseña incorrectos';
-        localStorage.removeItem('auth');
       }
     });
   }
+
+
+  private verifyToken() {
+    const headers = new HttpHeaders().set('Authorization', `Bearer ${this.token}`);
+    this.http.get(`${this.apiUrl}/api/auth/users`, { headers }).subscribe({
+      next: () => {
+        this.isLoggedIn = true;
+        this.isCheckingAuth = false;
+      },
+      error: () => {
+        this.logout();
+        this.isCheckingAuth = false;
+      }
+    });
+  }
+
 
   private tryLogin(username: string, password: string, silent: boolean = false) {
     if (!silent) {
@@ -103,12 +118,13 @@ export class AppComponent {
     });
   }
 
-  logout() {
+
+
+logout() {
     this.isLoggedIn = false;
-    localStorage.removeItem('auth');
-    this.username = '';
-    this.password = '';
-    this.isLoading = false;
+    this.token = '';
+    localStorage.removeItem('token');
+    this.isCheckingAuth = false;
   }
 
 }

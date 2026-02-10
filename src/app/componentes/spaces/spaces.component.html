@@ -434,7 +434,7 @@
 </!--div-->
 
 
-<div class="col-md-6">
+<!--div class="col-md-6">
   <label class="form-label">Teléfono *</label>
 
   <div class="input-group input-group-lg">
@@ -459,16 +459,48 @@
     Teléfono inválido para el país seleccionado
   </div>
 
-  <!--div-- *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
-  Número inválido para {{phoneCountry}}.
-  <span *ngIf="phoneCode === '+54'">
-    En Argentina debe tener 11 u 12 dígitos después del +54 (incluyendo el 9).
-    Ejemplos: +5491126911817 o +54935198765432
-  </span>
-  <span *ngIf="phoneCode !== '+54'">
-    Verifica la cantidad de dígitos para este país.
-  </span>
+
 </!--div-->
+
+
+<div class="col-md-6">
+  <label class="form-label">Teléfono *</label>
+
+  <div class="input-group input-group-lg">
+    <input
+      #phoneInput
+      formControlName="phone"
+      type="tel"
+      class="form-control form-control-dark"
+      placeholder="Ej: +5491126911817"
+      required />
+
+    <span class="input-group-text bg-transparent border-0">
+      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
+    </span>
+  </div>
+
+  <div class="form-text text-info">
+    País detectado: {{phoneFlag}} {{phoneCode}} {{phoneCountry || 'Escribe el número'}}
+  </div>
+
+  <!-- Mensajes de error más específicos -->
+  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small mt-1">
+    <div *ngIf="phoneErrorMessage">
+      <i class="fas fa-exclamation-circle me-1"></i>{{ phoneErrorMessage }}
+    </div>
+    <div *ngIf="!phoneErrorMessage">
+      Teléfono inválido para el país seleccionado
+    </div>
+    <div class="mt-1" *ngIf="phoneCode === '+54'">
+      <strong>Formato correcto:</strong> +54 9 [código área] [número]<br>
+      <em>Ejemplo:</em> +54 9 11 26911817 (Buenos Aires)
+    </div>
+  </div>
+
+   <div class="form-text text-muted" *ngIf="phoneCode === '+54' && !phoneIsValid">
+    <i class="fas fa-info-circle me-1"></i>{{ getPhoneFormatHint() }}
+  </div>
 </div>
 
 
@@ -906,13 +938,34 @@
               <td>{{client.plate || '-'}}</td>
               <td><span class="badge bg-secondary">{{client.code || '-'}}</span></td>
               <td>{{client.spaceKey || '-'}}</td>
-              <td>
+              <!--td>
   <span *ngIf="client.entryTimestamp || client.exitTimestamp; else noVisit">
     {{ formatDateOnly(client.entryTimestamp ?? client.exitTimestamp) }}
   </span>
   <ng-template #noVisit>
     <span class="text-muted">-</span>
   </ng-template>
+</td-->
+
+                    <td class="text-center">
+  <!-- Salida (prioridad si existe) -->
+  <ng-container *ngIf="client.exitTimestamp">
+    <span class="text-danger fw-bold">
+      {{ formatDateWithTime(client.exitTimestamp) }} (Salida)
+    </span>
+  </ng-container>
+
+  <!-- Ingreso (solo si no hay salida) -->
+  <ng-container *ngIf="!client.exitTimestamp && client.entryTimestamp">
+    <span class="text-info fw-bold">
+      {{ formatDateWithTime(client.entryTimestamp) }} (Ingreso)
+    </span>
+  </ng-container>
+
+  <!-- Ninguno -->
+  <ng-container *ngIf="!client.exitTimestamp && !client.entryTimestamp">
+    <span class="text-muted">-</span>
+  </ng-container>
 </td>
 
               <td>

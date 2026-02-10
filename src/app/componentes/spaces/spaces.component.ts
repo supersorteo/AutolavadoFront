@@ -120,6 +120,7 @@ public detectedCountryCode: string | null = null;
   phoneFlag = '';
   phoneCode = '';
   isModalOpen = false;
+  phoneErrorMessage: string = '';
 
   isClientModalOpen = false;
   constructor(
@@ -247,46 +248,8 @@ ngOnInit(): void {
 
 
 
-  /*this.clientForm.get('dni')?.valueChanges
-    .pipe(
-      debounceTime(600),
-      distinctUntilChanged()
-    )
-    .subscribe(dni => {
-      if (dni && dni.length >= 7) {
-        this.autolavadoService.searchClientByDni(dni).subscribe({
-          next: (client) => {
-            if (client) {
-              // Cliente encontrado → autocompletar + guardar ID real
-              this.existingClientId = client.id;
 
-              this.clientForm.patchValue({
-                name: client.name || '',
-                phone: client.phoneRaw || '',
-                plate: client.plate || '',
-                notes: client.notes || '',
-                vehicle: client.vehicle || ''
-              });
-
-              if (client.price) {
-                this.clientForm.get('price')?.setValue(client.price);
-              }
-
-              console.log('Cliente encontrado por DNI:', client);
-            } else {
-              this.existingClientId = null;  // Nuevo cliente
-            }
-          },
-          error: () => {
-            this.existingClientId = null;
-          }
-        });
-      } else {
-        this.existingClientId = null;
-      }
-    });*/
-
-this.clientForm.get('dni')?.valueChanges
+/*this.clientForm.get('dni')?.valueChanges
   .pipe(
     debounceTime(600),
     distinctUntilChanged()
@@ -307,12 +270,19 @@ this.clientForm.get('dni')?.valueChanges
                 phone: client.phoneIntl || client.phoneRaw || '',
                 plate: client.plate || '',
                 notes: client.notes || '',
-                vehicle: client.vehicle || ''
+                vehicle: client.vehicle || '',
+
               });
+
+
 
               if (client.price) {
                 this.clientForm.get('price')?.setValue(client.price);
               }
+
+                 this.clientForm.patchValue({
+        entryTimestamp: Date.now()  // ← Hora actual de nueva reserva
+      });
 
               alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
             } else {
@@ -329,6 +299,10 @@ this.clientForm.get('dni')?.valueChanges
                 price: client.price
               });
 
+                 this.clientForm.patchValue({
+        entryTimestamp: Date.now()  // ← Hora actual de nueva reserva
+      });
+
               alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
             }
           } else {
@@ -344,8 +318,65 @@ this.clientForm.get('dni')?.valueChanges
     } else {
       this.existingClientId = null;
     }
-  });
+  });*/
 
+
+this.clientForm.get('dni')?.valueChanges
+  .pipe(
+    debounceTime(600),
+    distinctUntilChanged()
+  )
+  .subscribe(dni => {
+    if (dni && dni.length >= 7) {
+      this.autolavadoService.searchClientByDni(dni).subscribe({
+        next: (client) => {
+          if (client) {
+            const isInactive = client.spaceKey === null || client.spaceKey === '';
+
+            if (isInactive) {
+              this.existingClientId = client.id;
+              alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
+            } else {
+              this.existingClientId = null;
+              alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
+            }
+
+            // Cargar todos los datos EXCEPTO el teléfono
+            this.clientForm.patchValue({
+              name: client.name || '',
+              plate: client.plate || '',
+              notes: client.notes || '',
+              vehicle: client.vehicle || '',
+              price: client.price || null,
+              entryTimestamp: Date.now()
+            }, { emitEvent: false });
+
+            // Cargar el teléfono por separado con un pequeño delay
+            setTimeout(() => {
+              const phoneToLoad = client.phoneIntl || client.phoneRaw || '';
+              if (phoneToLoad) {
+                // Primero actualizar la librería
+                if (this.iti) {
+                  this.iti.setNumber(phoneToLoad);
+                }
+                // Luego actualizar el form
+                this.clientForm.patchValue({ phone: phoneToLoad });
+              }
+            }, 150);
+
+          } else {
+            this.existingClientId = null;
+            alert('Cliente nuevo. Se creará un registro.');
+          }
+        },
+        error: () => {
+          this.existingClientId = null;
+        }
+      });
+    } else {
+      this.existingClientId = null;
+    }
+  });
 
 
 
@@ -396,7 +427,7 @@ this.phoneInput.nativeElement.addEventListener('input', () => {
   });
 }
 
-ngAfterViewInit(): void {
+ngAfterViewInit00(): void {
   this.iti = intlTelInput(this.phoneInput.nativeElement, {
     initialCountry: 'ar',
     preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
@@ -430,6 +461,47 @@ ngAfterViewInit(): void {
   });
 }
 
+
+ngAfterViewInit(): void {
+  this.iti = intlTelInput(this.phoneInput.nativeElement, {
+    initialCountry: 'ar',
+    preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
+    utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
+    separateDialCode: true,
+    nationalMode: false,
+    formatOnDisplay: true,
+    autoPlaceholder: 'polite',
+    placeholderNumberType: 'MOBILE'
+  });
+
+  // Listener para cuando el usuario escribe/pega
+  this.phoneInput.nativeElement.addEventListener('input', () => {
+    this.updatePhoneInfo(true); // true = usuario escribiendo
+  });
+
+  // Listener para cambio de país
+  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
+    this.updatePhoneInfo(true);
+  });
+
+  // Listener para cambios externos (ej: DNI patchValue)
+  this.clientForm.get('phone')?.valueChanges
+    .pipe(
+      debounceTime(100), // Pequeño delay para evitar loops
+      distinctUntilChanged()
+    )
+    .subscribe(newPhone => {
+      if (newPhone && this.iti) {
+        const currentNumber = this.iti.getNumber();
+
+        // Solo actualizar si el valor es diferente
+        if (currentNumber !== newPhone) {
+          this.iti.setNumber(newPhone);
+          this.updatePhoneInfo(false); // false = carga externa
+        }
+      }
+    });
+}
 
 
 
@@ -487,7 +559,7 @@ private updatePhoneInfo0(): void {
   this.cdr.detectChanges();
 }
 
-private updatePhoneInfo(): void {
+private updatePhoneInfo00(): void {
   if (!this.iti) return;
 
   // 1. Tomar el valor crudo del input (puede tener espacios, guiones, etc.)
@@ -538,7 +610,200 @@ private updatePhoneInfo(): void {
   this.cdr.detectChanges();
 }
 
+private updatePhoneInfo1(fromUserInput: boolean = false): void {
+  if (!this.iti) return;
 
+  let fullNumber: string;
+
+  if (fromUserInput) {
+    // Usuario escribiendo: tomar valor del input
+    const rawValue = this.phoneInput.nativeElement.value.trim();
+    fullNumber = this.iti.getNumber();
+  } else {
+    // Carga externa (DNI): usar el valor del form
+    fullNumber = this.iti.getNumber();
+  }
+
+  // Asegurar que tiene el signo +
+  if (!fullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    fullNumber = '+' + countryData.dialCode + fullNumber.replace(/^\+/, '');
+  }
+
+  // Validación
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+  let isValid = false;
+
+  if (dialCode === '54') {
+    // Argentina: validación personalizada
+    // Formato esperado: +549 + código de área (2-4 dígitos) + número (6-8 dígitos)
+    // Ejemplos: +5491126911817 (11 dígitos después de +549)
+    const match = fullNumber.match(/^\+54(\d+)$/);
+
+    if (match) {
+      const digits = match[1];
+
+      // Debe empezar con 9 (código de móvil) y tener 10-11 dígitos en total
+      if (digits.startsWith('9')) {
+        const totalDigits = digits.length;
+        isValid = totalDigits === 11 || totalDigits === 12; // 9 + 10 o 9 + 11 dígitos
+      } else {
+        // Teléfonos fijos (sin el 9)
+        isValid = digits.length >= 10 && digits.length <= 11;
+      }
+    }
+  } else {
+    // Otros países: usar validación de la librería
+    isValid = this.iti.isValidNumber();
+  }
+
+  // Actualizar el formControl SOLO si viene del usuario
+  if (fromUserInput) {
+    this.clientForm.patchValue({ phone: fullNumber }, { emitEvent: false });
+  }
+
+  // Actualizar variables de estado
+  this.phoneIsValid = isValid;
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + dialCode;
+
+  this.cdr.detectChanges();
+}
+
+private updatePhoneInfo(fromUserInput: boolean = false): void {
+  if (!this.iti) return;
+
+  let fullNumber: string;
+
+  if (fromUserInput) {
+    // Usuario escribiendo: tomar valor del input
+    fullNumber = this.iti.getNumber();
+  } else {
+    // Carga externa (DNI): usar el valor del form
+    fullNumber = this.iti.getNumber();
+  }
+
+  // Asegurar que tiene el signo +
+  if (!fullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    fullNumber = '+' + countryData.dialCode + fullNumber.replace(/^\+/, '');
+  }
+
+  // Validación
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+  let isValid = false;
+  let errorMessage = '';
+
+  if (dialCode === '54') {
+    // ========================================
+    // VALIDACIÓN ESTRICTA PARA ARGENTINA
+    // ========================================
+    // Formato: +54 9 [código de área] [número]
+    // El 9 es OBLIGATORIO para móviles
+
+    const match = fullNumber.match(/^\+54(\d+)$/);
+
+    if (match) {
+      const digits = match[1]; // Todos los dígitos después de +54
+
+      // REGLA 1: Debe empezar con 9 (obligatorio para móviles)
+      if (!digits.startsWith('9')) {
+        isValid = false;
+        errorMessage = 'Los móviles argentinos deben tener el 9 después de +54';
+      } else {
+        // REGLA 2: Después del 9, validar código de área + número
+        const afterNine = digits.substring(1); // Quitar el '9'
+
+        // Códigos de área comunes en Argentina:
+        // 11 (CABA/GBA): 8 dígitos después → total 10 dígitos (9 + 11 + 8)
+        // 2XX (Provincia Bs As): 6-8 dígitos después
+        // 3XX (otras provincias): 6-7 dígitos después
+
+        if (afterNine.startsWith('11')) {
+          // Buenos Aires: 9 11 + 8 dígitos = 11 dígitos totales
+          isValid = digits.length === 11;
+          if (!isValid) {
+            errorMessage = `Buenos Aires: debe tener 8 dígitos después del 11 (formato: +54 9 11 XXXXXXXX)`;
+          }
+        } else if (afterNine.match(/^2\d{2}/)) {
+          // Provincia de Buenos Aires (código 2XX): 9 + 3 dígitos + 6-8 dígitos
+          isValid = digits.length >= 10 && digits.length <= 12;
+          if (!isValid) {
+            errorMessage = `Provincia de Buenos Aires: formato +54 9 2XX XXXXXX`;
+          }
+        } else if (afterNine.match(/^3\d{2}/)) {
+          // Otras provincias (código 3XX): 9 + 3 dígitos + 6-7 dígitos
+          isValid = digits.length >= 10 && digits.length <= 11;
+          if (!isValid) {
+            errorMessage = `Código de área 3XX: formato +54 9 3XX XXXXXX`;
+          }
+        } else if (afterNine.match(/^4\d{2}/)) {
+          // Códigos 4XX: similar a 3XX
+          isValid = digits.length >= 10 && digits.length <= 11;
+          if (!isValid) {
+            errorMessage = `Código de área 4XX: formato +54 9 4XX XXXXXX`;
+          }
+        } else {
+          // Otros códigos: validación general
+          // Mínimo: 9 + 2 dígitos de área + 6 dígitos = 9 dígitos
+          // Máximo: 9 + 4 dígitos de área + 8 dígitos = 13 dígitos
+          isValid = digits.length >= 9 && digits.length <= 13;
+          if (!isValid) {
+            errorMessage = `Formato general: +54 9 [código área] [número]`;
+          }
+        }
+      }
+    } else {
+      isValid = false;
+      errorMessage = 'Formato inválido para Argentina';
+    }
+  } else {
+    // Otros países: usar validación de la librería
+    isValid = this.iti.isValidNumber();
+  }
+
+  // Actualizar el formControl SOLO si viene del usuario
+  if (fromUserInput) {
+    this.clientForm.patchValue({ phone: fullNumber }, { emitEvent: false });
+  }
+
+  // Actualizar variables de estado
+  this.phoneIsValid = isValid;
+  this.phoneErrorMessage = errorMessage; // Nueva variable para mostrar el error
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + dialCode;
+
+  this.cdr.detectChanges();
+}
+
+
+getPhoneFormatHint(): string {
+  if (!this.iti) return '';
+
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+
+  if (dialCode === '54') {
+    const phone = this.clientForm.get('phone')?.value || '';
+    const match = phone.match(/^\+549(\d+)/);
+
+    if (match) {
+      const afterNine = match[1];
+      if (afterNine.startsWith('11')) {
+        return '+54 9 11 XXXXXXXX (8 dígitos)';
+      } else if (afterNine.match(/^[234]\d{2}/)) {
+        return '+54 9 XXX XXXXXX/XXXXXXX (6-7 dígitos)';
+      }
+    }
+    return '+54 9 [código área] [número]';
+  }
+
+  return '';
+}
 
   private getFlagEmoji(iso2: string): string {
     if (!iso2) return '🌍';
@@ -1330,6 +1595,22 @@ formatStartTime(startTime: number | null): string {
   }) + ' hs';
 }
 
+
+formatDateWithTime(timestamp: number | null): string {
+  if (!timestamp) return '-';
+
+  const date = new Date(timestamp);
+  return date.toLocaleString('es-AR', {
+    weekday: 'short',          // lun, mar, etc.
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }) + ' hs';
+}
+
 getTimeInSpace(startTime: number | null): string {
   if (!startTime) return '-';
   const diff = Date.now() - startTime;
@@ -1659,8 +1940,16 @@ saveClient0(): void {
 }
 
 saveClient(): void {
-  if (this.clientForm.invalid) {
+ /* if (this.clientForm.invalid) {
     alert('Por favor completa todos los campos obligatorios.');
+    return;
+  }*/
+
+    if (this.clientForm.invalid || !this.phoneIsValid) {
+    alert('Por favor, completa todos los campos obligatorios correctamente.\n\nVerifica que el teléfono sea válido.');
+    Object.keys(this.clientForm.controls).forEach(key => {
+      this.clientForm.get(key)?.markAsTouched();
+    });
     return;
   }
 
@@ -1679,7 +1968,9 @@ const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';// 27783 (opcional)
       category,
       price,
       phoneIntl,
-      phoneRaw
+      phoneRaw,
+      entryTimestamp: Date.now(),  // Siempre nueva hora de entrada
+      exitTimestamp: null,
     };
 
     // GUARDAR EN LOCAL (genera tempId)
