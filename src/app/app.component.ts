@@ -56,14 +56,17 @@ login() {
     this.http.post(`${this.apiUrl}/api/auth/login`, {
       username: this.username,
       password: this.password
+
     }).subscribe({
       next: (response: any) => {
         this.token = response.token;
+        this.username = response.username;
         localStorage.setItem('token', this.token);
+        localStorage.setItem('username', this.username);
         this.isLoggedIn = true;
         this.isCheckingAuth = false;
         this.isLoading = false;
-        this.username = '';
+        //this.username = '';
         this.password = '';
       },
       error: (err) => {
@@ -80,6 +83,7 @@ login() {
       next: () => {
         this.isLoggedIn = true;
         this.isCheckingAuth = false;
+
       },
       error: () => {
         this.logout();
@@ -123,7 +127,9 @@ login() {
 logout() {
     this.isLoggedIn = false;
     this.token = '';
+    this.username = '';
     localStorage.removeItem('token');
+    localStorage.removeItem('username');
     this.isCheckingAuth = false;
   }
 
