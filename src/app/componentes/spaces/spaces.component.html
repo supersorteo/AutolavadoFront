@@ -259,60 +259,6 @@
 
 
 
-          <!-- VEHÍCULO -->
-          <!--div-- class="col-md-6">
-            <label class="form-label">Modelo de vehículo *</label>
-
-            <select
-              formControlName="vehicle"
-              class="form-select form-select-lg shadow-sm vehicle-select"
-              required
-              (change)="onVehicleSelected($event)">
-              <option value="" disabled selected>Seleccione un modelo</option>
-
-              <optgroup label="SUV - $40.000">
-                <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'SUV'">
-                  {{ v.model }}
-                </option>
-              </optgroup>
-
-              <optgroup label="AUTO - $35.000">
-                <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'AUTO'">
-                  {{ v.model }}
-                </option>
-              </optgroup>
-
-              <optgroup label="PICKUP - $70.000">
-                <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'PICKUP'">
-                  {{ v.model }}
-                </option>
-              </optgroup>
-
-              <optgroup label="ALTO PORTE - $100.000">
-                <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'ALTO PORTE'">
-                  {{ v.model }}
-                </option>
-              </optgroup>
-
-              <optgroup label="MOTO - $35.000">
-                <option *ngFor="let v of vehicles" [value]="v.model" [hidden]="v.category !== 'MOTO'">
-                  {{ v.model }}
-                </option>
-              </optgroup>
-            </select>
-
-            <div class="input-group-append">
-  <button
-    class="btn btn-outline-info"
-    type="button"
-    (click)="openVehicleAside()"
-    title="Ver / Agregar vehículos">
-    <i class="fas fa-list"></i>
-  </button>
-</div>
-            <div class="form-text">Se aplicará el precio según la categoría</div>
-          </!--div-->
-
 
           <div class="col-md-6">
   <label class="form-label">Modelo de vehículo *</label>
@@ -364,103 +310,7 @@
                    placeholder="AA123BB / ABC123" />
           </div>
 
-            <!-- TELÉFONO -->
-          <!--div-- class="col-md-6">
-            <label class="form-label">Teléfono (Argentina) *</label>
-            <input
-              formControlName="phone"
-              class="form-control form-control-dark"
-              placeholder="Ej: 1123456789 (sin 0 ni 15)"
-              pattern="[0-9]{8,10}"
-              required />
-            <div class="form-text">Solo números, sin 0 ni 15. Ej: 1123456789</div>
-            <div *ngIf="clientForm.get('phone')?.invalid && clientForm.get('phone')?.touched"
-                 class="text-danger small">
-              Ingresá un teléfono válido (8-10 dígitos)
-            </div>
-          </!--div-->
 
-      <!--div-- class="col-md-6">
-  <label class="form-label">Teléfono *</label>
-  <div class="input-group input-group-lg">
-    <span class="input-group-text bg-dark border-secondary d-flex align-items-center gap-2">
-      <span class="fs-4">{{phoneFlag}}</span>
-      <span class="fw-bold">{{phoneCode}}</span>
-      <span class="ms-1 text-truncate" style="max-width: 120px;">{{phoneCountry}}</span>
-    </span>
-    <input
-      formControlName="phone"
-      class="form-control form-control-dark"
-      placeholder="Ej: +5359874125 o 1123456789"
-      (input)="onPhoneInput($event)"
-      required />
-    <span class="input-group-text bg-transparent border-0">
-      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
-    </span>
-  </div>
-  <div class="form-text">
-    Escribe con o sin +. El país se fija una vez detectado el código.
-  </div>
-  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
-    Número inválido para {{phoneCountry}} (debe tener exactamente {{countryPhonePatterns[detectedCountryCode || '54']?.localDigits}} dígitos)
-  </div>
-</!--div-->
-
-
-<!--div-- class="col-md-6">
-  <label class="form-label">Teléfono *</label>
-  <div class="input-group input-group-lg">
-    <span class="input-group-text bg-dark border-secondary d-flex align-items-center gap-2">
-      <span class="fs-4">{{phoneFlag}}</span>
-      <span class="fw-bold">{{phoneCode}}</span>
-      <span class="ms-1 text-truncate" style="max-width: 120px;">{{phoneCountry}}</span>
-    </span>
-    <input
-      formControlName="phone"
-      class="form-control form-control-dark"
-      placeholder="Ej: +541126911817 o 1126911817"
-      (input)="onPhoneInput($event)"
-      required />
-    <span class="input-group-text bg-transparent border-0">
-      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
-    </span>
-  </div>
-  <div class="form-text">
-    Escribe con o sin +. Se detecta el país y valida la longitud exacta.
-  </div>
-  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
-    Número inválido para {{phoneCountry}} (debe tener exactamente {{countryPhonePatterns[detectedCountryCode || '54']?.localDigits}} dígitos después del código)
-  </div>
-</!--div-->
-
-
-<!--div class="col-md-6">
-  <label class="form-label">Teléfono *</label>
-
-  <div class="input-group input-group-lg">
-    <input
-      #phoneInput
-      formControlName="phone"
-      type="tel"
-      class="form-control form-control-dark"
-      placeholder="Ej: +541126911817 o 1126911817"
-      required />
-
-    <span class="input-group-text bg-transparent border-0">
-      <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
-    </span>
-  </div>
-
-  <div class="form-text text-info">
-    País detectado: {{phoneFlag}} {{phoneCode}} {{phoneCountry || 'Escribe el número'}}
-  </div>
-
-  <div *ngIf="!phoneIsValid && clientForm.get('phone')?.touched" class="text-danger small">
-    Teléfono inválido para el país seleccionado
-  </div>
-
-
-</!--div-->
 
 
 <div class="col-md-6">
@@ -475,9 +325,16 @@
       placeholder="Ej: +5491126911817"
       required />
 
-    <span class="input-group-text bg-transparent border-0">
+    <!--span-- class="input-group-text bg-transparent border-0">
       <i class="fas" [ngClass]="phoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
-    </span>
+    </!--span-->
+<span class="input-group-text bg-transparent border-0">
+  <i class="fas" [ngClass]="{
+    'fa-check text-success': phoneIsValid,
+    'fa-times text-danger': !phoneIsValid
+  }"></i>
+</span>
+
   </div>
 
   <div class="form-text text-info">
@@ -904,9 +761,22 @@
         <i class="fas fa-users me-2"></i>
         Base de datos de clientes ({{allClients.length}} registrados)
       </h2>
-      <button class="btn btn-outline-light btn-lg" type="button" (click)="closeClientsDb()">
+      <!--button-- class="btn btn-outline-light btn-lg" type="button" (click)="closeClientsDb()">
         <i class="fas fa-times me-2"></i> Cerrar
-      </button>
+      </!--button-->
+<div class="d-flex gap-2">
+    <!-- Botón NUEVO CLIENTE -->
+  <button class="btn btn-outline-light btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#newClientModal">
+  <i class="fas fa-plus me-2"></i> Nuevo Cliente
+</button>
+
+
+
+    <button class="btn btn-outline-light btn-lg" type="button" (click)="closeClientsDb()">
+      <i class="fas fa-times me-2"></i> Cerrar
+    </button>
+  </div>
+
     </div>
 
     <div class="clientes-db-modal__body p-4">
@@ -1019,4 +889,155 @@
 </div>
 
 
+
+<!-- MODAL NUEVO CLIENTE MANUAL -->
+<div class="modal fade" id="newClientModal" tabindex="-1" aria-labelledby="newClientModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content modal-dark">
+      <div class="modal-header">
+        <h5 class="modal-title" id="newClientModalLabel">
+          <i class="fas fa-user-plus me-2"></i>
+          Agregar Cliente Manual (sin espacio)
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <form [formGroup]="newClientForm" class="row g-3">
+
+          <!-- DNI (obligatorio) -->
+          <div class="col-md-6">
+            <label class="form-label">DNI *</label>
+            <input
+              formControlName="dni"
+              class="form-control form-control-dark"
+              placeholder="Ej: 40123456"
+              pattern="[0-9]{7,8}"
+              required />
+            <div class="form-text">Sin puntos ni espacios</div>
+            <div *ngIf="newClientForm.get('dni')?.invalid && newClientForm.get('dni')?.touched" class="text-danger small mt-1">
+              <span *ngIf="newClientForm.get('dni')?.errors?.['required']">
+                El DNI es obligatorio
+              </span>
+              <span *ngIf="newClientForm.get('dni')?.errors?.['pattern']">
+                DNI inválido. Debe tener 7 u 8 dígitos
+              </span>
+            </div>
+          </div>
+
+          <!-- Nombre (obligatorio) -->
+          <div class="col-md-6">
+            <label class="form-label">Nombre y apellido *</label>
+            <input
+              formControlName="name"
+              class="form-control form-control-dark"
+              required />
+            <div *ngIf="newClientForm.get('name')?.invalid && newClientForm.get('name')?.touched" class="text-danger small mt-1">
+              Nombre obligatorio
+            </div>
+          </div>
+
+          <!-- Teléfono (obligatorio) - mismo estilo que reserva -->
+
+
+          <!-- Vehículo (obligatorio) - mismo estilo que reserva -->
+          <div class="col-md-6">
+            <label class="form-label">Modelo de vehículo *</label>
+            <div class="input-group input-group-lg">
+              <input
+                formControlName="vehicle"
+                class="form-control form-control-dark"
+                placeholder="Seleccione un vehículo desde la lista"
+                readonly
+                required />
+              <button
+                class="btn btn-outline-info"
+                type="button"
+                (click)="openVehicleAsideForManual()"
+                title="Abrir lista de vehículos">
+                <i class="fas fa-list me-2"></i> Elegir
+              </button>
+            </div>
+            <div class="form-text">Precio y categoría se aplicarán automáticamente</div>
+            <div *ngIf="newClientForm.get('vehicle')?.invalid && newClientForm.get('vehicle')?.touched" class="text-danger small mt-1">
+              Vehículo obligatorio
+            </div>
+          </div>
+
+          <!-- Precio (automático) -->
+          <div class="col-md-6">
+            <label class="form-label">Precio del servicio</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input
+                type="number"
+                formControlName="price"
+                class="form-control form-control-lg shadow-sm"
+                style="background: #00040a; border: 1px solid #6d7b92; color: #edeff0;"
+                readonly
+                placeholder="Se carga automáticamente">
+            </div>
+            <div class="form-text">Precio por defecto según vehículo seleccionado</div>
+          </div>
+
+           <div class="col-md-6">
+            <label class="form-label">Teléfono *</label>
+            <div class="input-group input-group-lg">
+              <input
+                id="newPhoneIntlInput"
+                formControlName="phoneIntl"
+                type="tel"
+                class="form-control form-control-dark"
+                placeholder="Ej: +5491126911817"
+                required />
+              <span class="input-group-text bg-transparent border-0">
+                <i class="fas" [ngClass]="newPhoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
+              </span>
+            </div>
+            <div class="form-text text-info">
+              País detectado: {{newPhoneFlag}} {{newPhoneCode}} {{newPhoneCountry || 'Escribe el número'}}
+            </div>
+          <div *ngIf="!newPhoneIsValid && newClientForm.get('phoneIntl')?.touched" class="text-danger small mt-1">
+  <div *ngIf="newPhoneErrorMessage">
+    <i class="fas fa-exclamation-circle me-1"></i>{{ newPhoneErrorMessage }}
+  </div>
+  <div *ngIf="!newPhoneErrorMessage">
+    Teléfono inválido para el país seleccionado
+  </div>
+  <!-- Mantén el resto si querés (formato Argentina) -->
+  <div class="mt-1" *ngIf="newPhoneCode === '+54'">
+    <strong>Formato correcto:</strong> +54 9 [código área] [número]<br>
+    <em>Ejemplo:</em> +54 9 11 26911817 (Buenos Aires)
+  </div>
+</div>
+            <div class="form-text text-muted" *ngIf="newPhoneCode === '+54' && !newPhoneIsValid">
+              <i class="fas fa-info-circle me-1"></i>{{ getPhoneFormatHint() }}
+            </div>
+          </div>
+
+          <!-- Matrícula (opcional) -->
+          <div class="col-md-6">
+            <label class="form-label">Matrícula / Patente (opcional)</label>
+            <input
+              formControlName="plate"
+              class="form-control form-control-dark"
+              placeholder="AA123BB / ABC123" />
+          </div>
+
+          <!-- Botón guardar -->
+          <div class="col-12 mt-4">
+            <button
+              class="btn btn-primary btn-lg w-100"
+              type="button"
+              (click)="saveNewClient()"
+              [disabled]="newClientForm.invalid || !newPhoneIsValid || isSavingNewClient">
+              <span *ngIf="isSavingNewClient" class="spinner-border spinner-border-sm me-2"></span>
+              Guardar Cliente Manual
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 

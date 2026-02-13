@@ -78,8 +78,8 @@ export class AutolavadoService {
 
 
 
-   //private API_BASE = 'http://localhost:8080/api'
-   private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
+   private API_BASE = 'http://localhost:8080/api'
+   //private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
 
 
   // Observables públicos
@@ -1142,6 +1142,30 @@ saveClient(clientData: any, spaceKey: string): Client {
   return client;
 }
 
+
+
+
+addManualClient(clientData: any): Observable<Client> {
+  const url = `${this.API_BASE}/clients`;
+
+  const cleanData = {
+    name: clientData.name,
+    dni: clientData.dni || null,
+    phoneIntl: clientData.phoneIntl || null,
+    vehicle: clientData.vehicle || null,
+    plate: clientData.plate || null,
+    category: clientData.category || null,
+    price: clientData.price || null,
+    vehicleType: clientData.vehicleType || null, // si viene del selector
+    // NUNCA enviamos estos
+    spaceKey: null,
+    entryTimestamp: null,
+    exitTimestamp: null,
+    code: null
+  };
+
+  return this.http.post<Client>(url, cleanData);
+}
 
 private saveToLocalStorage(key: string, data: any): void {
   try {

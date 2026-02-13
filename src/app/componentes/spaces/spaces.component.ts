@@ -123,6 +123,36 @@ public detectedCountryCode: string | null = null;
   phoneErrorMessage: string = '';
 
   isClientModalOpen = false;
+
+
+isNewClientModalOpen = false;
+isSavingClient = false;
+newClient: any = {
+  name: '',
+  dni: '',
+  phoneIntl: '',
+  vehicle: '',
+  plate: '',
+  category: '',
+  price: null,
+  paymentMethod: '',
+  clover: null,
+  notes: ''
+};
+
+isLoading = false;
+showNewClientModal = false;
+
+newClientForm!: FormGroup;
+newPhoneInput!: ElementRef<HTMLInputElement>;
+newPhoneIsValid = false;
+newPhoneFlag = '';
+newPhoneCode = '';
+newPhoneCountry = '';
+private newIti: any;
+isSavingNewClient = false;
+isVehicleAsideFromManual = false;
+newPhoneErrorMessage: string = '';
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
@@ -140,6 +170,17 @@ public detectedCountryCode: string | null = null;
       plate: [''],
       notes: ['']
     });
+
+    this.newClientForm = this.fb.group({
+  name: ['', Validators.required],
+  //dni: ['', [Validators.pattern('[0-9]{7,8}')]],
+  dni: ['', [Validators.required, Validators.pattern('[0-9]{7,8}')]],
+  phoneIntl: ['', Validators.required],
+  vehicle: ['', Validators.required],
+  plate: [''],
+  category: [''],
+  price: [null]
+});
   }
 
  /* ngOnInit(): void {
@@ -249,79 +290,10 @@ ngOnInit(): void {
 
 
 
+
+
+
 /*this.clientForm.get('dni')?.valueChanges
-  .pipe(
-    debounceTime(600),
-    distinctUntilChanged()
-  )
-  .subscribe(dni => {
-    if (dni && dni.length >= 7) {
-      this.autolavadoService.searchClientByDni(dni).subscribe({
-        next: (client) => {
-          if (client) {
-            // Cliente encontrado en la base de datos
-            if (client.spaceKey === null || client.spaceKey === '') {
-              // Cliente INACTIVO (sin espacio) → REUTILIZAR
-              this.existingClientId = client.id;
-
-              this.clientForm.patchValue({
-                name: client.name || '',
-                //phone: client.phoneRaw || '',
-                phone: client.phoneIntl || client.phoneRaw || '',
-                plate: client.plate || '',
-                notes: client.notes || '',
-                vehicle: client.vehicle || '',
-
-              });
-
-
-
-              if (client.price) {
-                this.clientForm.get('price')?.setValue(client.price);
-              }
-
-                 this.clientForm.patchValue({
-        entryTimestamp: Date.now()  // ← Hora actual de nueva reserva
-      });
-
-              alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
-            } else {
-              // Cliente ACTIVO (con espacio ocupado) → CREAR NUEVO
-              this.existingClientId = null;
-
-              this.clientForm.patchValue({
-                name: client.name || '',
-                //phone: client.phoneRaw || '',
-                phone: client.phoneIntl || client.phoneRaw || '',
-                plate: client.plate || '',
-                notes: client.notes || '',
-                vehicle: client.vehicle || '',
-                price: client.price
-              });
-
-                 this.clientForm.patchValue({
-        entryTimestamp: Date.now()  // ← Hora actual de nueva reserva
-      });
-
-              alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
-            }
-          } else {
-            // Cliente NO existe → NUEVO
-            this.existingClientId = null;
-            alert('Cliente nuevo. Se creará un registro.');
-          }
-        },
-        error: () => {
-          this.existingClientId = null;
-        }
-      });
-    } else {
-      this.existingClientId = null;
-    }
-  });*/
-
-
-this.clientForm.get('dni')?.valueChanges
   .pipe(
     debounceTime(600),
     distinctUntilChanged()
@@ -376,8 +348,73 @@ this.clientForm.get('dni')?.valueChanges
     } else {
       this.existingClientId = null;
     }
-  });
 
+
+  });
+*/
+
+this.clientForm.get('dni')?.valueChanges
+  .pipe(
+    debounceTime(600),
+    distinctUntilChanged()
+  )
+  .subscribe(dni => {
+    if (dni && dni.length >= 7) {
+      this.autolavadoService.searchClientByDni(dni).subscribe({
+        next: (client) => {
+          if (client) {
+            const isInactive = client.spaceKey === null || client.spaceKey === '';
+
+            if (isInactive) {
+              this.existingClientId = client.id;
+              alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
+            } else {
+              this.existingClientId = null;
+              alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
+            }
+
+            // Cargar todos los datos EXCEPTO el teléfono
+            this.clientForm.patchValue({
+              name: client.name || '',
+              plate: client.plate || '',
+              notes: client.notes || '',
+              vehicle: client.vehicle || '',
+              price: client.price || null,
+              entryTimestamp: Date.now()
+            }, { emitEvent: false });
+
+            // Cargar el teléfono por separado con un pequeño delay
+            setTimeout(() => {
+              const phoneToLoad = client.phoneIntl || client.phoneRaw || '';
+              if (phoneToLoad && this.iti) {
+                console.log('[DNI búsqueda] Cargando teléfono desde backend:', phoneToLoad);
+
+                // 1. Actualizar la librería intl-tel-input
+                this.iti.setNumber(phoneToLoad);
+
+                // 2. Forzar actualización visual y validación
+                this.updatePhoneInfo(false); // false = carga externa
+
+                // 3. Actualizar el formControl (por seguridad)
+                this.clientForm.patchValue({ phone: phoneToLoad }, { emitEvent: false });
+
+                console.log('[DNI búsqueda] Teléfono cargado y validado visualmente');
+              }
+            }, 150);
+
+          } else {
+            this.existingClientId = null;
+            alert('Cliente nuevo. Se creará un registro.');
+          }
+        },
+        error: () => {
+          this.existingClientId = null;
+        }
+      });
+    } else {
+      this.existingClientId = null;
+    }
+  });
 
 
  this.limpiarEspaciosDeDiasAnteriores();
@@ -463,7 +500,7 @@ ngAfterViewInit00(): void {
 
 
 ngAfterViewInit(): void {
-  this.iti = intlTelInput(this.phoneInput.nativeElement, {
+ /* this.iti = intlTelInput(this.phoneInput.nativeElement, {
     initialCountry: 'ar',
     preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
     utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
@@ -500,179 +537,96 @@ ngAfterViewInit(): void {
           this.updatePhoneInfo(false); // false = carga externa
         }
       }
-    });
-}
+    });*/
 
 
+    this.iti = intlTelInput(this.phoneInput.nativeElement, {
+    initialCountry: 'ar',
+    preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
+    utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
+    separateDialCode: true,
+    nationalMode: false,
+    formatOnDisplay: true,
+    autoPlaceholder: 'polite',
+    placeholderNumberType: 'MOBILE'
+  });
 
+  // Listener para input manual
+  this.phoneInput.nativeElement.addEventListener('input', () => {
+    this.updatePhoneInfo(true);
+  });
 
+  // Listener para cambio de país
+  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
+    this.updatePhoneInfo(true);
+  });
 
+  // Listener para cambios externos (DNI, patchValue, etc.)
+  this.clientForm.get('phone')?.valueChanges
+    .pipe(
+      debounceTime(300), // Más tiempo para evitar loops rápidos
+      distinctUntilChanged()
+    )
+    .subscribe(newPhone => {
+      console.log('[valueChanges] Teléfono cambiado desde código:', newPhone);
+      if (newPhone && this.iti) {
+        const currentNumber = this.iti.getNumber();
 
-private updatePhoneInfo0(): void {
-  if (!this.iti) return;
-
-  // 1. Tomar el valor crudo del input (puede tener espacios, guiones, etc.)
-  const rawValue = this.phoneInput.nativeElement.value.trim();
-
-  // 2. Limpiar: dejar solo números y el signo +
-  const cleanedValue = rawValue.replace(/[^0-9+]/g, '');
-
-  // 3. Pasar el valor limpio a la librería
-  this.iti.setNumber(cleanedValue);
-
-  // 4. Obtener el número limpio y formateado por la librería
-  const fullNumber = this.iti.getNumber();
-
-  // 5. Seguridad extra: si no tiene +, agregarlo usando el país actual
-  let safeFullNumber = fullNumber;
-  if (!safeFullNumber.startsWith('+')) {
-    const countryData = this.iti.getSelectedCountryData();
-    safeFullNumber = '+' + countryData.dialCode + safeFullNumber;
-  }
-
-  // 6. Validación personalizada para Argentina
-  const localDigits = safeFullNumber.replace(/^\+54/, ''); // Quitar +54
-  let isValid = false;
-
-  const countryData = this.iti.getSelectedCountryData();
-  const dialCode = countryData.dialCode;
-
-  if (dialCode === '54') {
-    // Aceptamos 10 o 11 dígitos después del +54 (incluyendo el 9)
-    isValid = localDigits.length === 11 || localDigits.length === 12;
-  } else {
-    isValid = this.iti.isValidNumber();
-  }
-
-  // 7. Guardar el número completo (con + y código)
-  this.clientForm.patchValue({ phone: safeFullNumber }, { emitEvent: false });
-
-  this.phoneIsValid = isValid;
-
-  this.phoneCountry = countryData.name || 'Desconocido';
-  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
-  this.phoneCode = '+' + dialCode;
-
-  // Opcional: mostrar el número limpio y formateado en el input
-  this.phoneInput.nativeElement.value = this.iti.getNumber();
-
-  this.cdr.detectChanges();
-}
-
-private updatePhoneInfo00(): void {
-  if (!this.iti) return;
-
-  // 1. Tomar el valor crudo del input (puede tener espacios, guiones, etc.)
-  const rawValue = this.phoneInput.nativeElement.value.trim();
-
-  // 2. Limpiar: dejar solo números y el signo +
-  const cleanedValue = rawValue.replace(/[^0-9+]/g, '');
-
-  // 3. Pasar el valor limpio a la librería
-  this.iti.setNumber(cleanedValue);
-
-  // 4. Obtener el número limpio y formateado por la librería
-  const fullNumber = this.iti.getNumber();
-
-  // 5. Seguridad extra: si no tiene +, agregarlo usando el país actual
-  let safeFullNumber = fullNumber;
-  if (!safeFullNumber.startsWith('+')) {
-    const countryData = this.iti.getSelectedCountryData();
-    safeFullNumber = '+' + countryData.dialCode + safeFullNumber;
-  }
-
-  // 6. Validación personalizada para Argentina
-  const localDigits = safeFullNumber.replace(/^\+54/, ''); // Quitar +54
-  let isValid = false;
-
-  const countryData = this.iti.getSelectedCountryData();
-  const dialCode = countryData.dialCode;
-
-  if (dialCode === '54') {
-    // Aceptamos 10 o 11 dígitos después del +54 (incluyendo el 9)
-    isValid = localDigits.length === 11 || localDigits.length === 12;
-  } else {
-    isValid = this.iti.isValidNumber();
-  }
-
-  // 7. Guardar el número completo (con + y código) → SIN DISPARAR valueChanges
-  this.clientForm.patchValue({ phone: safeFullNumber }, { emitEvent: false });
-
-  this.phoneIsValid = isValid;
-
-  this.phoneCountry = countryData.name || 'Desconocido';
-  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
-  this.phoneCode = '+' + dialCode;
-
-  // Opcional: mostrar el número limpio y formateado en el input
-  this.phoneInput.nativeElement.value = this.iti.getNumber();
-
-  this.cdr.detectChanges();
-}
-
-private updatePhoneInfo1(fromUserInput: boolean = false): void {
-  if (!this.iti) return;
-
-  let fullNumber: string;
-
-  if (fromUserInput) {
-    // Usuario escribiendo: tomar valor del input
-    const rawValue = this.phoneInput.nativeElement.value.trim();
-    fullNumber = this.iti.getNumber();
-  } else {
-    // Carga externa (DNI): usar el valor del form
-    fullNumber = this.iti.getNumber();
-  }
-
-  // Asegurar que tiene el signo +
-  if (!fullNumber.startsWith('+')) {
-    const countryData = this.iti.getSelectedCountryData();
-    fullNumber = '+' + countryData.dialCode + fullNumber.replace(/^\+/, '');
-  }
-
-  // Validación
-  const countryData = this.iti.getSelectedCountryData();
-  const dialCode = countryData.dialCode;
-  let isValid = false;
-
-  if (dialCode === '54') {
-    // Argentina: validación personalizada
-    // Formato esperado: +549 + código de área (2-4 dígitos) + número (6-8 dígitos)
-    // Ejemplos: +5491126911817 (11 dígitos después de +549)
-    const match = fullNumber.match(/^\+54(\d+)$/);
-
-    if (match) {
-      const digits = match[1];
-
-      // Debe empezar con 9 (código de móvil) y tener 10-11 dígitos en total
-      if (digits.startsWith('9')) {
-        const totalDigits = digits.length;
-        isValid = totalDigits === 11 || totalDigits === 12; // 9 + 10 o 9 + 11 dígitos
-      } else {
-        // Teléfonos fijos (sin el 9)
-        isValid = digits.length >= 10 && digits.length <= 11;
+        // Solo actualizar si es diferente (evita loops infinitos)
+        if (currentNumber !== newPhone) {
+          console.log('[valueChanges] Actualizando iti con:', newPhone);
+          this.iti.setNumber(newPhone);
+          this.updatePhoneInfo(false); // false = carga externa
+        }
       }
-    }
-  } else {
-    // Otros países: usar validación de la librería
-    isValid = this.iti.isValidNumber();
+    });
+
+  // Fuerza validación inicial si ya hay valor al cargar el modal
+  const initialPhone = this.clientForm.get('phone')?.value;
+  if (initialPhone && this.iti) {
+    console.log('[ngAfterViewInit] Validación inicial con teléfono existente:', initialPhone);
+    this.iti.setNumber(initialPhone);
+    this.updatePhoneInfo(false);
   }
 
-  // Actualizar el formControl SOLO si viene del usuario
-  if (fromUserInput) {
-    this.clientForm.patchValue({ phone: fullNumber }, { emitEvent: false });
+
+  setTimeout(() => {
+  const phoneEl = document.getElementById('newPhoneIntlInput');
+  if (phoneEl) {
+    this.newIti = intlTelInput(phoneEl, {
+      initialCountry: 'ar',
+      preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
+      utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
+      separateDialCode: true,
+      nationalMode: false,
+      formatOnDisplay: true,
+      autoPlaceholder: 'polite',
+      placeholderNumberType: 'MOBILE'
+    });
+
+    phoneEl.addEventListener('input', () => this.updateNewPhoneInfo());
+    phoneEl.addEventListener('countrychange', () => this.updateNewPhoneInfo());
+
+    // Sincronizar valueChanges
+    this.newClientForm.get('phoneIntl')?.valueChanges.subscribe(value => {
+      if (value && this.newIti && this.newIti.getNumber() !== value) {
+        this.newIti.setNumber(value);
+        this.updateNewPhoneInfo();
+      }
+    });
   }
+}, 0);
 
-  // Actualizar variables de estado
-  this.phoneIsValid = isValid;
-  this.phoneCountry = countryData.name || 'Desconocido';
-  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
-  this.phoneCode = '+' + dialCode;
-
-  this.cdr.detectChanges();
 }
 
-private updatePhoneInfo(fromUserInput: boolean = false): void {
+
+
+
+
+
+
+
+private updatePhoneInfo0(fromUserInput: boolean = false): void {
   if (!this.iti) return;
 
   let fullNumber: string;
@@ -780,6 +734,70 @@ private updatePhoneInfo(fromUserInput: boolean = false): void {
   this.cdr.detectChanges();
 }
 
+private updatePhoneInfo(fromUserInput: boolean = false): void {
+  if (!this.iti) {
+    console.warn('[updatePhoneInfo] intl-tel-input no inicializado');
+    return;
+  }
+
+  let fullNumber = this.iti.getNumber();
+
+  // Asegurar + al inicio
+  if (!fullNumber.startsWith('+')) {
+    const countryData = this.iti.getSelectedCountryData();
+    fullNumber = '+' + countryData.dialCode + fullNumber;
+    console.log('[updatePhoneInfo] Agregado + manualmente:', fullNumber);
+  }
+
+  // Validación completa
+  const countryData = this.iti.getSelectedCountryData();
+  const dialCode = countryData.dialCode;
+  let isValid = this.iti.isValidNumber(); // Validación base de la librería
+  let errorMessage = '';
+
+  if (dialCode === '54') {
+    const digits = fullNumber.replace('+54', '');
+    if (!digits.startsWith('9')) {
+      isValid = false;
+      errorMessage = 'Los móviles argentinos deben tener el 9 después de +54';
+    } else {
+      const afterNine = digits.substring(1);
+      if (afterNine.startsWith('11')) {
+        isValid = digits.length === 11;
+        if (!isValid) errorMessage = 'Buenos Aires: debe tener 8 dígitos después del 11';
+      } else if (afterNine.match(/^[234]\d{2}/)) {
+        isValid = digits.length >= 10 && digits.length <= 12;
+        if (!isValid) errorMessage = 'Provincia Bs As: formato +54 9 2XX XXXXXX';
+      } else {
+        isValid = digits.length >= 10 && digits.length <= 11;
+        if (!isValid) errorMessage = 'Formato general: +54 9 [código área] [número]';
+      }
+    }
+  }
+
+  // Guardar en el form SOLO si viene del usuario (evita loops)
+  if (fromUserInput) {
+    this.clientForm.patchValue({ phone: fullNumber }, { emitEvent: false });
+    console.log('[updatePhoneInfo] Actualizado formControl:', fullNumber);
+  }
+
+  // ACTUALIZAR ESTADO VISUAL (esto es lo clave para que cambie la palomita)
+  this.phoneIsValid = isValid;
+  this.phoneErrorMessage = errorMessage;
+  this.phoneCountry = countryData.name || 'Desconocido';
+  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.phoneCode = '+' + dialCode;
+
+  console.log('[updatePhoneInfo] Resultado:', {
+    fullNumber,
+    isValid,
+    errorMessage,
+    phoneIsValid: this.phoneIsValid,
+    fromUserInput
+  });
+
+  this.cdr.detectChanges(); // Forzar actualización visual
+}
 
 getPhoneFormatHint(): string {
   if (!this.iti) return '';
@@ -805,12 +823,269 @@ getPhoneFormatHint(): string {
   return '';
 }
 
+
+private updateNewPhoneInfo0(): void {
+  if (!this.newIti) return;
+
+  let fullNumber = this.newIti.getNumber();
+
+  if (!fullNumber.startsWith('+')) {
+    const countryData = this.newIti.getSelectedCountryData();
+    fullNumber = '+' + countryData.dialCode + fullNumber;
+  }
+
+  this.newPhoneIsValid = this.newIti.isValidNumber();
+
+  const countryData = this.newIti.getSelectedCountryData();
+  this.newPhoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.newPhoneCode = '+' + countryData.dialCode;
+  this.newPhoneCountry = countryData.name || 'Desconocido';
+
+  // Guardar en el form
+  this.newClientForm.patchValue({ phoneIntl: fullNumber }, { emitEvent: false });
+
+  // Validación extra para Argentina (copia tu lógica)
+  if (countryData.dialCode === '54') {
+    const digits = fullNumber.replace('+54', '');
+    if (!digits.startsWith('9')) {
+      this.newPhoneIsValid = false;
+      console.warn('Móvil Argentina debe empezar con 9 después de +54');
+    }
+  }
+
+  this.cdr.detectChanges();
+  console.log('[updateNewPhoneInfo] Teléfono actualizado:', fullNumber, 'Válido:', this.newPhoneIsValid);
+}
+
+private updateNewPhoneInfo(): void {
+  if (!this.newIti) return;
+
+  let fullNumber = this.newIti.getNumber();
+  if (!fullNumber.startsWith('+')) {
+    const countryData = this.newIti.getSelectedCountryData();
+    fullNumber = '+' + countryData.dialCode + fullNumber;
+  }
+
+  this.newPhoneIsValid = this.newIti.isValidNumber();
+
+  const countryData = this.newIti.getSelectedCountryData();
+  this.newPhoneFlag = this.getFlagEmoji(countryData.iso2);
+  this.newPhoneCode = '+' + countryData.dialCode;
+  this.newPhoneCountry = countryData.name || 'Desconocido';
+
+  // Guardar en form
+  this.newClientForm.patchValue({ phoneIntl: fullNumber }, { emitEvent: false });
+
+  // Validación extra Argentina (copia tu código)
+  this.newPhoneErrorMessage = '';
+  if (countryData.dialCode === '54') {
+    const digits = fullNumber.replace('+54', '');
+    if (!digits.startsWith('9')) {
+      this.newPhoneIsValid = false;
+      this.newPhoneErrorMessage = 'Los móviles argentinos deben tener el 9 después de +54';
+    }
+  }
+
+  this.cdr.detectChanges();
+}
+
+
+
   private getFlagEmoji(iso2: string): string {
     if (!iso2) return '🌍';
     return iso2.toUpperCase().replace(/./g, char => String.fromCodePoint(char.charCodeAt(0) + 127397));
   }
 
 
+openNewClientModal0() {
+  this.newClient = { // Resetear formulario
+    name: '',
+    dni: '',
+    phoneIntl: '',
+    vehicle: '',
+    plate: '',
+    category: '',
+    price: null,
+    paymentMethod: '',
+    clover: null,
+    notes: ''
+  };
+  this.isNewClientModalOpen = true;
+  // O usa Bootstrap modal si preferís
+  const modal = new bootstrap.Modal(document.getElementById('newClientModal'));
+  modal.show();
+}
+
+
+openNewClientModal() {
+  this.newClientForm.reset();
+  this.newPhoneIsValid = false;
+  this.newPhoneFlag = '';
+  this.newPhoneCode = '';
+  this.newPhoneCountry = '';
+  if (this.newIti) {
+    this.newIti.setCountry('ar');
+    this.newIti.setNumber('');
+  }
+  this.showNewClientModal = true;
+
+  // Si usás Bootstrap modal
+  const modal = new bootstrap.Modal(document.getElementById('newClientModal'));
+  modal.show();
+}
+
+openVehicleAsideForManual() {
+  this.isVehicleAsideFromManual = true; // Bandera para saber desde dónde se abrió
+  this.openVehicleAside(); // Tu método actual
+}
+
+
+
+selectVehicle1(vehicle: VehicleType): void {
+  // Llenar el formulario con el vehículo seleccionado
+  this.clientForm.patchValue({
+    vehicle: vehicle.model,
+    price: vehicle.price
+  });
+
+  console.log('Vehículo seleccionado desde tabla:', {
+    model: vehicle.model,
+    category: vehicle.category,
+    price: vehicle.price
+  });
+
+  // Cerrar el aside automáticamente después de seleccionar
+  this.closeVehicleAside();
+
+  this.toastService.showSuccess(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`);
+  console.log(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`)
+}
+
+selectVehicle(v: VehicleType) {
+  if (this.isVehicleAsideFromManual) {
+    // Desde modal de nuevo cliente manual
+    this.newClientForm.patchValue({
+      vehicle: v.model,
+      category: v.category,
+      price: v.price
+    });
+  } else {
+    // Desde modal de reserva de espacio (tu lógica original)
+    this.clientForm.patchValue({
+      vehicle: v.model,
+      category: v.category,
+      price: v.price
+    });
+  }
+
+  // Cerrar aside y resetear bandera (común a ambos)
+  this.closeVehicleAside();
+  this.isVehicleAsideFromManual = false;
+
+  // Toast y log (opcional, pero recomendado)
+  this.toastService.showSuccess(`Vehículo seleccionado: ${v.model} - $${v.price}`);
+  console.log('Vehículo seleccionado:', {
+    model: v.model,
+    category: v.category,
+    price: v.price,
+    desde: this.isVehicleAsideFromManual ? 'nuevo cliente manual' : 'reserva de espacio'
+  });
+}
+
+
+
+saveNewClient() {
+  console.log('[saveNewClient] === INICIO ===');
+
+  // Marcar campos para mostrar errores
+  this.newClientForm.markAllAsTouched();
+  console.log('[saveNewClient] Form marcado como tocado');
+  console.log('[saveNewClient] ¿Formulario válido?', this.newClientForm.valid);
+  console.log('[saveNewClient] ¿Teléfono válido?', this.newPhoneIsValid);
+  console.log('[saveNewClient] Valores del form:', this.newClientForm.value);
+
+  // Validación estricta
+  if (this.newClientForm.invalid || !this.newPhoneIsValid) {
+    console.warn('[saveNewClient] Validación fallida → no se guarda');
+    alert('Completa todos los campos obligatorios y verifica el teléfono');
+    return;
+  }
+
+  const clientData = this.newClientForm.value;
+  console.log('[saveNewClient] Datos a enviar:', clientData);
+
+  this.isSavingNewClient = true;
+  console.log('[saveNewClient] Spinner activado');
+
+  this.autolavadoService.addManualClient(clientData).subscribe({
+    next: (savedClient) => {
+      console.log('[saveNewClient] Guardado exitoso:', savedClient);
+
+      this.isSavingNewClient = false;
+
+      // Mostrar éxito
+      alert('Cliente agregado correctamente');
+
+      // CERRAR MODAL DE FORMA SEGURA
+      const modalElement = document.getElementById('newClientModal');
+      if (modalElement) {
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (modalInstance) {
+          modalInstance.hide();
+          setTimeout(() => {
+  const backdrop = document.querySelector('.modal-backdrop');
+  if (backdrop) backdrop.remove();
+  document.body.classList.remove('modal-open');
+}, 300);
+          console.log('[saveNewClient] Modal cerrado con bootstrap.Modal.hide()');
+        } else {
+          console.warn('[saveNewClient] No se encontró instancia del modal');
+        }
+      } else {
+        console.warn('[saveNewClient] No se encontró elemento #newClientModal');
+      }
+
+      // Resetear formulario y variables
+      this.newClientForm.reset();
+      this.newPhoneIsValid = false;
+      this.newPhoneFlag = '';
+      this.newPhoneCode = '';
+      this.newPhoneCountry = '';
+      if (this.newIti) {
+        this.newIti.setNumber('');
+        this.newIti.setCountry('ar');
+      }
+
+      // Recargar lista
+      this.loadAllClientsFromBackend();
+      this.cdr.detectChanges();
+      console.log('[saveNewClient] Lista recargada');
+
+      this.cdr.detectChanges();
+      console.log('[saveNewClient] Change detection forzado');
+    },
+
+    error: (err) => {
+      console.error('[saveNewClient] ERROR al guardar:', err);
+      this.isSavingNewClient = false;
+
+      const msg = err.error?.message || err.message || 'Error desconocido';
+      alert('Error al guardar: ' + msg);
+      console.error('[saveNewClient] Mensaje mostrado:', msg);
+    },
+
+    complete: () => {
+      console.log('[saveNewClient] === FINALIZADO (complete) ===');
+      this.isSavingNewClient = false; // por seguridad
+      this.cdr.detectChanges();
+    }
+  });
+}
+
+// Cerrar modal
+closeNewClientModal() {
+  this.showNewClientModal = false;
+}
 
 get paginatedVehicles(): VehicleType[] {
   const start = (this.currentVehiclePage - 1) * this.vehiclePageSize;
@@ -1420,7 +1695,7 @@ openVehicleAside(): void {
 }
 
 // Cierra el aside
-closeVehicleAside(): void {
+closeVehicleAside0(): void {
   this.showVehicleAside = false;
 
   // 3. Volver a abrir el modal de reserva si estaba abierto antes
@@ -1428,6 +1703,22 @@ closeVehicleAside(): void {
     this.clientModalInstance.show();
     console.log('Modal de reserva reabierto después de cerrar aside');
   }
+}
+
+closeVehicleAside(): void {
+  this.showVehicleAside = false;
+  console.log('Aside de vehículos cerrado');
+
+  // Solo reabrir el modal de RESERVA si NO venimos del modal manual
+  if (!this.isVehicleAsideFromManual && this.clientModalInstance) {
+    this.clientModalInstance.show();
+    console.log('Modal de RESERVA reabierto después de cerrar aside');
+  } else if (this.isVehicleAsideFromManual) {
+    console.log('No reabrimos modal de reserva porque venimos del modal manual');
+  }
+
+  // Resetear la bandera para la próxima vez
+  this.isVehicleAsideFromManual = false;
 }
 
 onVehicleInput(event: Event): void {
@@ -2290,25 +2581,7 @@ selectVehicle0(vehicle: VehicleType): void {
 }
 
 
-selectVehicle(vehicle: VehicleType): void {
-  // Llenar el formulario con el vehículo seleccionado
-  this.clientForm.patchValue({
-    vehicle: vehicle.model,
-    price: vehicle.price
-  });
 
-  console.log('Vehículo seleccionado desde tabla:', {
-    model: vehicle.model,
-    category: vehicle.category,
-    price: vehicle.price
-  });
-
-  // Cerrar el aside automáticamente después de seleccionar
-  this.closeVehicleAside();
-
-  this.toastService.showSuccess(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`);
-  console.log(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`)
-}
 
 // Cerrar modal sin guardar
 closeNewVehicleModal(): void {

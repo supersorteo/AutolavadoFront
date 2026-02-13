@@ -23,8 +23,8 @@ export class AppComponent {
   isLoading = false;
   showPassword = false;
   isCheckingAuth = true;
-  //private apiUrl = "http://localhost:8080";
-  private apiUrl = "https://excellsiorback-production.up.railway.app"
+  private apiUrl = "http://localhost:8080";
+  //private apiUrl = "https://excellsiorback-production.up.railway.app"
   token = '';
 
   constructor(private http: HttpClient) {
@@ -32,13 +32,20 @@ export class AppComponent {
 
   }
 
-private checkAuth() {
+
+
+  private checkAuth() {
     const savedToken = localStorage.getItem('token');
-    if (savedToken) {
+    const savedUsername = localStorage.getItem('username');
+
+    if (savedToken && savedUsername) {
       this.token = savedToken;
-      this.verifyToken();
+      this.username = savedUsername;
+      this.isLoggedIn = true;
+      this.verifyToken(); // Verifica si el token sigue válido
     } else {
-      this.isCheckingAuth = false; // Sin token → mostrar login
+      this.isLoggedIn = false;
+      this.isCheckingAuth = false; // Sin datos → mostrar login
     }
   }
 
@@ -60,13 +67,14 @@ login() {
     }).subscribe({
       next: (response: any) => {
         this.token = response.token;
-        this.username = response.username;
+       // this.username = response.username;
+        this.username = response.username || this.username;
         localStorage.setItem('token', this.token);
         localStorage.setItem('username', this.username);
         this.isLoggedIn = true;
         this.isCheckingAuth = false;
         this.isLoading = false;
-        //this.username = '';
+
         this.password = '';
       },
       error: (err) => {
@@ -77,7 +85,7 @@ login() {
   }
 
 
-  private verifyToken() {
+  private verifyToken0() {
     const headers = new HttpHeaders().set('Authorization', `Bearer ${this.token}`);
     this.http.get(`${this.apiUrl}/api/auth/users`, { headers }).subscribe({
       next: () => {
@@ -92,6 +100,21 @@ login() {
     });
   }
 
+  private verifyToken() {
+    const headers = new HttpHeaders().set('Authorization', `Bearer ${this.token}`);
+    this.http.get(`${this.apiUrl}/api/auth/users`, { headers }).subscribe({
+      next: () => {
+        // Token válido → mantener sesión
+        this.isLoggedIn = true;
+        this.isCheckingAuth = false;
+      },
+      error: (err) => {
+        console.warn('Verificación de token falló:', err.status, err.message);
+        this.logout(); // Limpia todo si el token ya no es válido
+        this.isCheckingAuth = false;
+      }
+    });
+  }
 
   private tryLogin(username: string, password: string, silent: boolean = false) {
     if (!silent) {
@@ -124,7 +147,7 @@ login() {
 
 
 
-logout() {
+logout0() {
     this.isLoggedIn = false;
     this.token = '';
     this.username = '';
@@ -132,5 +155,26 @@ logout() {
     localStorage.removeItem('username');
     this.isCheckingAuth = false;
   }
+
+  logout() {
+  // Mensaje de confirmación nativo del navegador
+  const confirmed = confirm("¿Estás seguro de que quieres cerrar sesión?");
+
+  if (confirmed) {
+    // Solo ejecuta el logout si el usuario confirma
+    this.isLoggedIn = false;
+    this.token = '';
+    this.username = '';
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    this.isCheckingAuth = false;
+
+    // Opcional: pequeño mensaje de éxito (nativo también)
+    alert("Sesión cerrada correctamente.");
+  }
+  // Si cancela, no pasa nada → se queda logueado
+}
+
+
 
 }
