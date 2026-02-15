@@ -153,6 +153,7 @@ private newIti: any;
 isSavingNewClient = false;
 isVehicleAsideFromManual = false;
 newPhoneErrorMessage: string = '';
+
   constructor(
     private autolavadoService: AutolavadoService,
     private qrService: QrService,
@@ -177,7 +178,7 @@ newPhoneErrorMessage: string = '';
   dni: ['', [Validators.required, Validators.pattern('[0-9]{7,8}')]],
   phoneIntl: ['', Validators.required],
   vehicle: ['', Validators.required],
-  plate: [''],
+  plate: ['', Validators.required],
   category: [''],
   price: [null]
 });
@@ -897,27 +898,29 @@ private updateNewPhoneInfo(): void {
   }
 
 
-openNewClientModal0() {
-  this.newClient = { // Resetear formulario
-    name: '',
-    dni: '',
-    phoneIntl: '',
-    vehicle: '',
-    plate: '',
-    category: '',
-    price: null,
-    paymentMethod: '',
-    clover: null,
-    notes: ''
-  };
-  this.isNewClientModalOpen = true;
-  // O usa Bootstrap modal si preferís
+resetNewClientForm() {
+  this.newClientForm.reset();
+  this.newPhoneIsValid = false;
+  this.newPhoneFlag = '';
+  this.newPhoneCode = '';
+  this.newPhoneCountry = '';
+  this.newPhoneErrorMessage = '';
+  if (this.newIti) {
+    this.newIti.setNumber('');
+    this.newIti.setCountry('ar');
+  }
+  this.isSavingNewClient = false;
+}
+
+// Abrir modal
+openNewClientModal() {
+  this.resetNewClientForm(); // Resetear siempre al abrir
   const modal = new bootstrap.Modal(document.getElementById('newClientModal'));
   modal.show();
 }
 
 
-openNewClientModal() {
+openNewClientModal0() {
   this.newClientForm.reset();
   this.newPhoneIsValid = false;
   this.newPhoneFlag = '';
@@ -994,7 +997,7 @@ selectVehicle(v: VehicleType) {
 
 
 
-saveNewClient() {
+saveNewClient0() {
   console.log('[saveNewClient] === INICIO ===');
 
   // Marcar campos para mostrar errores
@@ -1078,6 +1081,87 @@ saveNewClient() {
       console.log('[saveNewClient] === FINALIZADO (complete) ===');
       this.isSavingNewClient = false; // por seguridad
       this.cdr.detectChanges();
+    }
+  });
+}
+
+saveNewClient() {
+  console.log('[saveNewClient] === INICIO ===');
+
+  // Marcar todos los campos para mostrar errores
+  this.newClientForm.markAllAsTouched();
+  console.log('[saveNewClient] Form marcado como tocado');
+
+  // Validación manual + teléfono
+  if (this.newClientForm.invalid || !this.newPhoneIsValid) {
+    console.warn('[saveNewClient] Validación fallida');
+    this.isSavingNewClient = false;
+    return; // No envía nada
+  }
+
+  const clientData = {
+    ...this.newClientForm.value,
+    phoneIntl: this.newClientForm.value.phoneIntl,
+    vehicle: this.newClientForm.value.vehicle,
+    plate: this.newClientForm.value.plate,
+    price: this.newClientForm.value.price
+  };
+
+  console.log('[saveNewClient] Datos a enviar:', clientData);
+
+  this.isSavingNewClient = true;
+
+  this.autolavadoService.addManualClient(clientData).subscribe({
+    next: (savedClient) => {
+      console.log('[saveNewClient] Guardado exitoso:', savedClient);
+      this.isSavingNewClient = false;
+
+      alert('Cliente agregado correctamente');
+
+          const modalElement = document.getElementById('newClientModal');
+      if (modalElement) {
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (modalInstance) {
+          modalInstance.hide();
+          setTimeout(() => {
+           const backdrop = document.querySelector('.modal-backdrop');
+           if (backdrop) backdrop.remove();
+           document.body.classList.remove('modal-open');
+         }, 300);
+          console.log('[saveNewClient] Modal cerrado con bootstrap.Modal.hide()');
+        } else {
+          console.warn('[saveNewClient] No se encontró instancia del modal');
+        }
+      } else {
+        console.warn('[saveNewClient] No se encontró elemento #newClientModal');
+      }
+      // Cerrar modal
+      const modal = bootstrap.Modal.getInstance(document.getElementById('newClientModal'));
+      if (modal) modal.hide();
+
+          this.newClientForm.reset();
+      this.newPhoneIsValid = false;
+      this.newPhoneFlag = '';
+      this.newPhoneCode = '';
+      this.newPhoneCountry = '';
+
+      if (this.newIti) {
+        this.newIti.setNumber('');
+        this.newIti.setCountry('ar');
+      }
+
+      // Recargar lista
+      this.loadAllClientsFromBackend();
+      this.cdr.detectChanges();
+      console.log('[saveNewClient] Lista recargada');
+
+      this.cdr.detectChanges();
+      console.log('[saveNewClient] Change detection forzado');
+    },
+    error: (err) => {
+      console.error('[saveNewClient] ERROR:', err);
+      this.isSavingNewClient = false;
+      alert('Error al guardar: ' + (err.error?.message || 'Intenta de nuevo'));
     }
   });
 }
@@ -2859,7 +2943,11 @@ cerrarDia0(): void {
 openCerrarDiaModal(): void {
   const hoy = new Date().toLocaleDateString('es-AR');
   this.cerrarDiaModalMessage =
-    `Cerrar el dia ${hoy}?\n\nEsto liberara todos los espacios.\nLos clientes se mantendran en el historico.\n\nContinuar?`;
+    `Cerrar el día ${hoy}?\n
+    - Esto liberará todos los espacios.\n
+    - Los clientes se mantendrán en el histórico.\n
+    - Haga el reporte antes de ejecutar esta acción o perderá los servicios del día.\n
+    Continuar?`;
   this.showModal('closeDayModal');
 }
 
