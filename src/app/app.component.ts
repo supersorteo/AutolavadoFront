@@ -24,7 +24,11 @@ export class AppComponent {
   showPassword = false;
   isCheckingAuth = true;
   //private apiUrl = "http://localhost:8080";
-  private apiUrl = "https://excellsiorback-production.up.railway.app"
+  //private apiUrl = "https://excellsiorback-production.up.railway.app"
+
+
+  //danilo pruebas
+  private apiUrl = "https://exellssiorpruebadanilo1-production.up.railway.app"
   token = '';
 
   constructor(private http: HttpClient) {
