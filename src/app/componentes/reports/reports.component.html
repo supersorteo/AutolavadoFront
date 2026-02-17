@@ -147,7 +147,7 @@
         </thead>
         <tbody>
           <!--tr *ngFor="let client of paginatedClients"-->
-            <tr *ngFor="let client of paginatedDailyClients">
+            <tr *ngFor="let client of paginatedDailyClients" [ngClass]="{'paid-row': isClientPaid(client)}">
             <td>
               <span class="code-badge">{{client.code}}</span>
             </td>
@@ -472,6 +472,10 @@
             <i class="bi bi-list-ul me-2"></i>
             {{ showReportsList ? 'Ocultar Reportes' : 'Ver Reportes' }}
           </button>
+          <button class="btn btn-outline-light btn-lg px-4 shadow-sm" (click)="toggleClientsRanking()">
+            <i class="bi bi-trophy me-2"></i>
+            {{ showClientsRanking ? 'Ocultar Ranking' : 'Ranking de Clientes' }}
+          </button>
         </div>
       </div>
     </div>
@@ -499,5 +503,73 @@
 
 
 
+
+<div class="ranking-modal" *ngIf="showClientsRanking">
+  <div class="ranking-modal__backdrop" (click)="closeClientsRanking()"></div>
+
+  <div class="ranking-modal__content">
+    <div class="ranking-modal__header d-flex justify-content-between align-items-center">
+      <div class="d-flex align-items-center gap-2">
+        <h5 class="card-title mb-0">
+          <i class="bi bi-trophy-fill text-warning me-2"></i>
+          Ranking de clientes frecuentes (Top 100)
+        </h5>
+        <span class="badge bg-secondary">Solo frontend</span>
+      </div>
+      <button class="btn-close btn-close-white" type="button" (click)="closeClientsRanking()" aria-label="Cerrar"></button>
+    </div>
+
+    <div class="ranking-modal__body">
+      <p class="ranking-note mb-3">
+        Vista de interfaz lista. La lógica real para calcular frecuencia se integrará después.
+      </p>
+
+      <div class="table-responsive ranking-table-wrapper">
+        <table class="table table-dark table-striped align-middle mb-0">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Cliente</th>
+              <th>DNI</th>
+              <th>Teléfono</th>
+              <th>Servicios</th>
+              <th>Última visita</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let client of paginatedRankingPreview">
+              <td>
+                <span class="rank-badge">#{{ client.position }}</span>
+              </td>
+              <td>{{ client.name }}</td>
+              <td>{{ client.dni }}</td>
+              <td>{{ client.phone }}</td>
+              <td>
+                <strong class="text-info">{{ client.totalServices }}</strong>
+              </td>
+              <td>{{ client.lastVisit }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="ranking-modal__footer">
+      <nav aria-label="Paginación ranking">
+        <ul class="pagination justify-content-center mb-0">
+          <li class="page-item" [class.disabled]="currentRankingPage === 1">
+            <a class="page-link" (click)="setRankingPage(currentRankingPage - 1)">Previous</a>
+          </li>
+          <li class="page-item" *ngFor="let page of rankingPageNumbers" [class.active]="page === currentRankingPage">
+            <a class="page-link" (click)="setRankingPage(page)">{{ page }}</a>
+          </li>
+          <li class="page-item" [class.disabled]="currentRankingPage === totalRankingPages">
+            <a class="page-link" (click)="setRankingPage(currentRankingPage + 1)">Next</a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
 
     <app-reports-list *ngIf="showReportsList"></app-reports-list>

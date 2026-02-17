@@ -9,6 +9,16 @@ import { ReportsListComponent } from "../reports-list/reports-list.component";
 import { FormatPhonePipe } from "../../services/format-phone.pipe";
 
 declare const bootstrap: any;
+
+interface RankingClienteView {
+  position: number;
+  name: string;
+  dni: string;
+  phone: string;
+  totalServices: number;
+  lastVisit: string;
+}
+
 @Component({
   selector: 'app-reports',
   standalone: true,
@@ -75,6 +85,17 @@ pageSizeDaily = 5;
     //danilo pruebas
   private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
   showReportsList = false;
+  showClientsRanking = false;
+  currentRankingPage = 1;
+  rankingPageSize = 12;
+  rankingPreview: RankingClienteView[] = Array.from({ length: 100 }, (_, i) => ({
+    position: i + 1,
+    name: `Cliente ${String(i + 1).padStart(3, '0')}`,
+    dni: `${42000000 + i}`,
+    phone: `+54 9 11 ${String(1000 + i).padStart(4, '0')}-${String(2000 + i).padStart(4, '0')}`,
+    totalServices: Math.max(1, 100 - i),
+    lastVisit: '-'
+  }));
 
 scheduledTime: string = ''; // Hora guardada (ej. "23:30")
 private dailyInterval: any;
@@ -149,6 +170,50 @@ toggleReportsList(): void {
   if (this.showReportsList) {
     this.refreshStats(); // Actualiza stats al abrir
   }
+}
+
+toggleClientsRanking(): void {
+  this.showClientsRanking = !this.showClientsRanking;
+  if (this.showClientsRanking) {
+    this.currentRankingPage = 1;
+  }
+}
+
+closeClientsRanking(): void {
+  this.showClientsRanking = false;
+}
+
+get totalRankingPages(): number {
+  return Math.max(1, Math.ceil(this.rankingPreview.length / this.rankingPageSize));
+}
+
+get paginatedRankingPreview(): RankingClienteView[] {
+  const start = (this.currentRankingPage - 1) * this.rankingPageSize;
+  return this.rankingPreview.slice(start, start + this.rankingPageSize);
+}
+
+setRankingPage(page: number): void {
+  if (page >= 1 && page <= this.totalRankingPages) {
+    this.currentRankingPage = page;
+  }
+}
+
+get rankingPageNumbers(): number[] {
+  const total = this.totalRankingPages;
+  const current = this.currentRankingPage;
+  const maxPages = 7;
+  let start = Math.max(1, current - Math.floor(maxPages / 2));
+  let end = Math.min(total, start + maxPages - 1);
+
+  if (end - start + 1 < maxPages) {
+    start = Math.max(1, end - maxPages + 1);
+  }
+
+  const pages: number[] = [];
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+  return pages;
 }
 
 toggleReportsList0(): void {
@@ -435,6 +500,21 @@ isCloverInvalid(): boolean {
   const clover = this.editForm.clover;
   if (!clover) return false;
   return clover.toString().length !== 4 || !/^\d{4}$/.test(clover.toString());
+}
+
+isClientPaid(client: Client): boolean {
+  const paymentMethod = (client.paymentMethod || '').toString().trim();
+  const hasPaymentMethod = paymentMethod.length > 0;
+
+  if (client.clover === null || client.clover === undefined) {
+    return false;
+  }
+
+  const cloverRaw = client.clover.toString().trim();
+  const cloverNormalized = /^\d+$/.test(cloverRaw) ? cloverRaw.padStart(4, '0') : cloverRaw;
+  const hasValidClover = /^\d{4}$/.test(cloverNormalized);
+
+  return hasPaymentMethod && hasValidClover;
 }
 
     closeEditClient0(): void {
