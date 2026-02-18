@@ -12,6 +12,12 @@ import intlTelInput from 'intl-tel-input';
 import { FormatPhonePipe } from "../../services/format-phone.pipe";
 declare var bootstrap: any;
 
+interface ClientVehicleItem {
+  model: string;
+  plate?: string;
+  notes?: string;
+}
+
 @Component({
   selector: 'app-spaces',
   standalone: true,
@@ -68,6 +74,7 @@ export class SpacesComponent implements OnInit, OnDestroy {
   whatsappMessageOccupied = '';
   whatsappMessageOccupied0 = '';
   hasCopiedMessageOccupied = false;
+  sentReleaseWhatsappBySpace = new Set<string>();
   cerrarDiaModalMessage = '';
   cerrarDiaResultMessage = '';
   saveClientHeaderMessage = '';
@@ -153,6 +160,13 @@ private newIti: any;
 isSavingNewClient = false;
 isVehicleAsideFromManual = false;
 newPhoneErrorMessage: string = '';
+showClientVehiclesModal = false;
+clientVehiclesStore: { [clientKey: string]: ClientVehicleItem[] } = {};
+clientVehiclesList: ClientVehicleItem[] = [];
+clientVehicleEditor: ClientVehicleItem = { model: '', plate: '', notes: '' };
+editingClientVehicleIndex: number | null = null;
+showFrequentClientModal = false;
+frequentClientVisitsSnapshot: Client[] = [];
 
   constructor(
     private autolavadoService: AutolavadoService,
@@ -1870,12 +1884,195 @@ closeClientModal(): void {
   this.isClientModalOpen = false;
   this.clientForm.reset();
   this.whatsappLink = '';
+  this.showClientVehiclesModal = false;
+  this.showFrequentClientModal = false;
 
   if (this.iti) {
     this.iti.setCountry('ar');
     this.iti.setNumber('');
     this.updatePhoneInfo();
   }
+}
+
+private toTimestamp(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value).getTime();
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+private getCurrentClientIdentity(): { dni: string; phone: string; name: string } {
+  const dni = (this.clientForm.get('dni')?.value || '').toString().trim();
+  const phone = (this.clientForm.get('phone')?.value || '').toString().replace(/\D/g, '');
+  const name = (this.clientForm.get('name')?.value || '').toString().trim().toLowerCase();
+  return { dni, phone, name };
+}
+
+private matchesClientIdentity(client: Client, identity: { dni: string; phone: string; name: string }): boolean {
+  const clientDni = (client.dni || '').toString().trim();
+  const clientPhone = (client.phoneIntl || '').toString().replace(/\D/g, '');
+  const clientName = (client.name || '').toString().trim().toLowerCase();
+
+  if (identity.dni && clientDni) {
+    return identity.dni === clientDni;
+  }
+
+  if (identity.phone && clientPhone) {
+    return identity.phone === clientPhone;
+  }
+
+  if (identity.name && clientName) {
+    return identity.name === clientName;
+  }
+
+  return false;
+}
+
+private getVisitsForCurrentClientThisMonth(): Client[] {
+  const identity = this.getCurrentClientIdentity();
+  if (!identity.dni && !identity.phone && !identity.name) return [];
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+
+  return (this.allClients || [])
+    .filter(client => this.matchesClientIdentity(client, identity))
+    .filter(client => {
+      const ts = this.toTimestamp(client.entryTimestamp);
+      return ts !== null && ts >= monthStart && ts < nextMonthStart;
+    })
+    .sort((a, b) => (this.toTimestamp(b.entryTimestamp) || 0) - (this.toTimestamp(a.entryTimestamp) || 0));
+}
+
+get frequentClientMonthlyVisitsCount(): number {
+  return this.getVisitsForCurrentClientThisMonth().length;
+}
+
+get showFrequentClientButton(): boolean {
+  return this.frequentClientMonthlyVisitsCount > 3;
+}
+
+openFrequentClientModal(): void {
+  const visits = this.getVisitsForCurrentClientThisMonth();
+  if (visits.length <= 3) return;
+  this.frequentClientVisitsSnapshot = visits;
+  this.showFrequentClientModal = true;
+}
+
+closeFrequentClientModal(): void {
+  this.showFrequentClientModal = false;
+}
+
+private getCurrentClientVehiclesKey(): string {
+  const dni = (this.clientForm.get('dni')?.value || '').toString().trim();
+  const name = (this.clientForm.get('name')?.value || '').toString().trim().toLowerCase();
+
+  if (dni) return `dni:${dni}`;
+  if (name) return `name:${name}`;
+  return `space:${this.selectedSpaceKey || 'temp'}`;
+}
+
+private persistCurrentClientVehicles(): void {
+  const key = this.getCurrentClientVehiclesKey();
+  if (this.clientVehiclesList.length === 0) {
+    delete this.clientVehiclesStore[key];
+    return;
+  }
+  this.clientVehiclesStore[key] = this.clientVehiclesList.map(v => ({ ...v }));
+}
+
+openClientVehiclesModal(): void {
+  const key = this.getCurrentClientVehiclesKey();
+  const stored = this.clientVehiclesStore[key] || [];
+  this.clientVehiclesList = stored.map(v => ({ ...v }));
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+
+  const currentModel = (this.clientForm.get('vehicle')?.value || '').toString().trim();
+  const currentPlate = (this.clientForm.get('plate')?.value || '').toString().trim();
+  if (currentModel && this.clientVehiclesList.length === 0) {
+    this.clientVehiclesList.push({
+      model: currentModel,
+      plate: currentPlate,
+      notes: ''
+    });
+    this.persistCurrentClientVehicles();
+  }
+
+  this.showClientVehiclesModal = true;
+}
+
+closeClientVehiclesModal(): void {
+  this.showClientVehiclesModal = false;
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+}
+
+saveClientVehicleItem(): void {
+  const model = (this.clientVehicleEditor.model || '').trim();
+  if (!model) {
+    alert('Debes ingresar el modelo del vehículo.');
+    return;
+  }
+
+  const payload: ClientVehicleItem = {
+    model,
+    plate: (this.clientVehicleEditor.plate || '').trim(),
+    notes: (this.clientVehicleEditor.notes || '').trim()
+  };
+
+  if (this.editingClientVehicleIndex !== null) {
+    this.clientVehiclesList[this.editingClientVehicleIndex] = payload;
+  } else {
+    if (this.clientVehiclesList.length >= 4) {
+      alert('Solo se permiten hasta 4 vehículos por cliente.');
+      return;
+    }
+    this.clientVehiclesList.push(payload);
+  }
+
+  this.persistCurrentClientVehicles();
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+}
+
+editClientVehicleItem(index: number): void {
+  const item = this.clientVehiclesList[index];
+  if (!item) return;
+  this.clientVehicleEditor = { ...item };
+  this.editingClientVehicleIndex = index;
+}
+
+deleteClientVehicleItem(index: number): void {
+  const item = this.clientVehiclesList[index];
+  if (!item) return;
+
+  if (!confirm(`¿Eliminar el vehículo "${item.model}"?`)) return;
+  this.clientVehiclesList.splice(index, 1);
+  this.persistCurrentClientVehicles();
+
+  if (this.editingClientVehicleIndex === index) {
+    this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+    this.editingClientVehicleIndex = null;
+  }
+}
+
+selectClientVehicleItem(item: ClientVehicleItem): void {
+  this.clientForm.patchValue({
+    vehicle: item.model || '',
+    plate: item.plate || this.clientForm.value.plate || ''
+  });
+
+  const selectedVehicleType = this.vehicles.find(v => v.model === item.model);
+  if (selectedVehicleType) {
+    this.clientForm.patchValue({ price: selectedVehicleType.price });
+  }
+
+  this.closeClientVehiclesModal();
 }
 
 filterClientsAdmin(): void {
@@ -1898,6 +2095,84 @@ filterClientsAdmin(): void {
 clearSearchClients(): void {
   this.searchTermClients = '';
   this.filteredClientsAdmin = this.allClients;
+}
+
+exportClientsDbToExcel(): void {
+  const confirmed = confirm('¿Deseas exportar la base de datos de clientes a Excel?');
+  if (!confirmed) return;
+
+  const rows = this.allClients || [];
+  const fileName = `base_datos_clientes_${new Date().toISOString().slice(0, 10)}.xls`;
+
+  const escapeHtml = (value: any): string =>
+    String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const tableRows = rows.map((client) => `
+    <tr>
+      <td>${escapeHtml(client.id)}</td>
+      <td>${escapeHtml(client.code)}</td>
+      <td>${escapeHtml(client.name)}</td>
+      <td>${escapeHtml(client.dni)}</td>
+      <td>${escapeHtml(client.phoneIntl)}</td>
+      <td>${escapeHtml(client.vehicle)}</td>
+      <td>${escapeHtml(client.plate)}</td>
+      <td>${escapeHtml(client.category)}</td>
+      <td>${escapeHtml(client.price)}</td>
+      <td>${escapeHtml(client.paymentMethod)}</td>
+      <td>${escapeHtml(client.spaceKey)}</td>
+      <td>${escapeHtml(client.entryTimestamp)}</td>
+      <td>${escapeHtml(client.exitTimestamp)}</td>
+    </tr>
+  `).join('');
+
+  const htmlExcel = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+      </head>
+      <body>
+        <table border="1">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Código</th>
+              <th>Nombre</th>
+              <th>DNI</th>
+              <th>Teléfono</th>
+              <th>Vehículo</th>
+              <th>Matrícula</th>
+              <th>Categoría</th>
+              <th>Precio</th>
+              <th>Método Pago</th>
+              <th>Espacio</th>
+              <th>Ingreso</th>
+              <th>Salida</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const blob = new Blob([htmlExcel], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  this.toastService.showSuccess('Base de datos exportada correctamente');
 }
 
 loadAllClientsFromBackend0(): void {
@@ -1984,6 +2259,12 @@ formatDateWithTime(timestamp: number | null): string {
     minute: '2-digit',
     hour12: false
   }) + ' hs';
+}
+
+formatVisitDateLabel(timestamp: any): string {
+  const ts = this.toTimestamp(timestamp);
+  if (!ts) return '-';
+  return this.formatDateWithTime(ts);
 }
 
 getTimeInSpace(startTime: number | null): string {
@@ -2221,6 +2502,19 @@ saveClient0(): void {
   }
 
   try {
+    const currentVehicleModel = (this.clientForm.value.vehicle || '').toString().trim();
+    if (currentVehicleModel) {
+      const alreadyExists = this.clientVehiclesList.some(v => v.model.toLowerCase() === currentVehicleModel.toLowerCase());
+      if (!alreadyExists && this.clientVehiclesList.length < 4) {
+        this.clientVehiclesList.push({
+          model: currentVehicleModel,
+          plate: (this.clientForm.value.plate || '').toString().trim(),
+          notes: ''
+        });
+      }
+      this.persistCurrentClientVehicles();
+    }
+
     const selectedVehicleModel = this.clientForm.value.vehicle;
     const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
 
@@ -2738,6 +3032,7 @@ launchWhatsApp(): void {
 
 launchWhatsAppRelease(): void {
   if (!this.selectedClient || !this.whatsappMessageOccupied) return;
+  if (!this.hasCopiedMessageOccupied) return;
 
   const phone = this.selectedClient.phoneIntl;
   const message = this.whatsappMessageOccupied;
@@ -2745,6 +3040,10 @@ launchWhatsAppRelease(): void {
   const link = `whatsapp://send?phone=${phone}&text=${encoded}`;
 
   window.open(link, '_blank');
+  const sentSpaceKey = this.selectedSpace?.key || this.selectedSpaceKey;
+  if (sentSpaceKey) {
+    this.sentReleaseWhatsappBySpace.add(sentSpaceKey);
+  }
 
   this.hasCopiedMessageOccupied = false;
 }
@@ -3178,6 +3477,11 @@ copyMessageOccupied(): void {
   });
 
 
+}
+
+isReleaseMessageSentForSpace(space: Space): boolean {
+  if (!space?.key) return false;
+  return this.sentReleaseWhatsappBySpace.has(space.key);
 }
 
 

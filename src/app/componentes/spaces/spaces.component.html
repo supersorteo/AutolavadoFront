@@ -59,6 +59,10 @@
                     [class.btn-occ]="space.occupied"
                     [class.btn-hold]="space.hold"
                     (click)="onSpaceClick(space)">
+              <i
+                *ngIf="space.occupied && isReleaseMessageSentForSpace(space)"
+                class="fab fa-whatsapp wa-sent-icon"
+                aria-hidden="true"></i>
               {{space.displayName || space.key}}
               <!--i-- class="bi bi-pencil edit-icon" title="Editar espacio"  ></!--i-->
               <i class="bi bi-pencil edit-icon" title="Editar espacio" (click)="editSpace(space); $event.stopPropagation()"></i>
@@ -260,7 +264,7 @@
 
 
 
-          <div class="col-md-6">
+<div class="col-md-6">
   <label class="form-label">Modelo de vehículo *</label>
 
   <div class="input-group input-group-lg">
@@ -283,6 +287,14 @@
   </div>
 
   <div class="form-text">Precio se aplicará automáticamente según el vehículo seleccionado</div>
+
+  <button
+    class="btn btn-outline-light btn-sm mt-2"
+    type="button"
+    (click)="openClientVehiclesModal()">
+    <i class="fas fa-car-side me-2"></i>
+    Vehículos del cliente
+  </button>
 </div>
 
           <!-- PRECIO -->
@@ -369,6 +381,16 @@
             <input formControlName="notes" class="form-control form-control-dark"
                    placeholder="Color, observaciones" />
           </div>
+
+          <div class="col-12" *ngIf="showFrequentClientButton">
+            <button
+              class="btn btn-outline-warning btn-sm"
+              type="button"
+              (click)="openFrequentClientModal()">
+              <i class="fas fa-star me-2"></i>
+              Cliente frecuente ({{ frequentClientMonthlyVisitsCount }} visitas este mes)
+            </button>
+          </div>
         </form>
 
         <hr />
@@ -404,6 +426,115 @@
             <div class="small text-dark mt-2">{{qrCaption}}</div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Vehículos del cliente -->
+<div class="client-vehicles-modal" *ngIf="showClientVehiclesModal">
+  <div class="client-vehicles-modal__backdrop" (click)="closeClientVehiclesModal()"></div>
+  <div class="client-vehicles-modal__content">
+    <div class="client-vehicles-modal__header">
+      <h5 class="mb-0">
+        <i class="fas fa-car me-2 text-info"></i>
+        Vehículos del cliente ({{clientVehiclesList.length}}/4)
+      </h5>
+      <button class="btn-close btn-close-white" type="button" (click)="closeClientVehiclesModal()" aria-label="Cerrar"></button>
+    </div>
+
+    <div class="client-vehicles-modal__body">
+      <div class="row g-2 mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Modelo *</label>
+          <input class="form-control form-control-dark" [(ngModel)]="clientVehicleEditor.model" placeholder="Ej: Toyota Corolla">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Matrícula</label>
+          <input class="form-control form-control-dark" [(ngModel)]="clientVehicleEditor.plate" placeholder="ABC123">
+        </div>
+        <div class="col-md-5">
+          <label class="form-label">Notas</label>
+          <input class="form-control form-control-dark" [(ngModel)]="clientVehicleEditor.notes" placeholder="Color, versión, etc.">
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mb-3">
+        <button class="btn btn-primary btn-sm" type="button" (click)="saveClientVehicleItem()">
+          <i class="fas fa-save me-2"></i>
+          {{ editingClientVehicleIndex !== null ? 'Actualizar vehículo' : 'Agregar vehículo' }}
+        </button>
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          type="button"
+          (click)="clientVehicleEditor = { model: '', plate: '', notes: '' }; editingClientVehicleIndex = null">
+          Limpiar
+        </button>
+      </div>
+
+      <div class="client-vehicles-grid">
+        <div
+          class="client-vehicle-card"
+          *ngFor="let item of clientVehiclesList; let i = index"
+          (click)="selectClientVehicleItem(item)">
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <strong>{{ item.model }}</strong>
+            <span class="badge bg-secondary">#{{ i + 1 }}</span>
+          </div>
+          <div class="small text-muted">Matrícula: {{ item.plate || '-' }}</div>
+          <div class="small text-muted mb-2">Notas: {{ item.notes || '-' }}</div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-warning btn-sm" type="button" (click)="editClientVehicleItem(i); $event.stopPropagation()">
+              Editar
+            </button>
+            <button class="btn btn-outline-danger btn-sm" type="button" (click)="deleteClientVehicleItem(i); $event.stopPropagation()">
+              Borrar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="clientVehiclesList.length === 0" class="text-muted small mt-2">
+        No hay vehículos cargados. Puedes agregar hasta 4.
+      </div>
+      <div class="text-muted small mt-2">
+        Tip: haz clic sobre una tarjeta para cargar ese vehículo en el campo "Modelo de vehículo".
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Cliente Frecuente -->
+<div class="client-frequent-modal" *ngIf="showFrequentClientModal">
+  <div class="client-frequent-modal__backdrop" (click)="closeFrequentClientModal()"></div>
+  <div class="client-frequent-modal__content">
+    <div class="client-frequent-modal__header">
+      <h5 class="mb-0">
+        <i class="fas fa-star text-warning me-2"></i>
+        Últimas visitas del mes ({{ frequentClientVisitsSnapshot.length }})
+      </h5>
+      <button class="btn-close btn-close-white" type="button" (click)="closeFrequentClientModal()" aria-label="Cerrar"></button>
+    </div>
+    <div class="client-frequent-modal__body">
+      <div class="table-responsive">
+        <table class="table table-dark table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Vehículo</th>
+              <th>Matrícula</th>
+              <th>Espacio</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let visit of frequentClientVisitsSnapshot">
+              <td>{{ formatVisitDateLabel(visit.entryTimestamp) }}</td>
+              <td>{{ visit.vehicle || '-' }}</td>
+              <td>{{ visit.plate || '-' }}</td>
+              <td>{{ visit.spaceKey || '-' }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -858,7 +989,7 @@
       </div>
     </div>
 
-    <div class="clientes-db-modal__footer px-4 py-3 border-top">
+    <div class="clientes-db-modal__footer px-4 py-3 border-top d-flex align-items-center gap-2">
       <div class="input-group w-50">
         <input
           type="text"
@@ -870,6 +1001,10 @@
           Limpiar
         </button>
       </div>
+      <button class="btn btn-outline-success" type="button" (click)="exportClientsDbToExcel()">
+        <i class="bi bi-file-earmark-excel me-2"></i>
+        Exportar BD a Excel
+      </button>
     </div>
   </div>
 </div>
