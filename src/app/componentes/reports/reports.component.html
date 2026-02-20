@@ -147,19 +147,32 @@
         </thead>
         <tbody>
           <!--tr *ngFor="let client of paginatedClients"-->
-            <tr *ngFor="let client of paginatedDailyClients" [ngClass]="{'paid-row': isClientPaid(client)}">
-            <td>
+            <tr *ngFor="let client of paginatedDailyClients"
+            [ngClass]="{'paid-row': isClientPaid(client)}"
+
+            >
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
               <span class="code-badge">{{client.code}}</span>
             </td>
-            <td>{{client.name}}</td>
-            <td>
+
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
+              {{client.name}}
+
+            </td>
+
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
               <span class="badge bg-info">{{$any(client).spaceDisplayName}}</span>
             </td>
             <!--td>{{client.phoneIntl}}</td-->
-            <td>{{client.phoneIntl | formatPhone}}</td>
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
+              {{client.phoneIntl | formatPhone}}
+            </td>
             <!--td>{{client.phoneIntl?.startsWith('+') ? client.phoneIntl : '+' + client.phoneIntl}}</td-->
-            <td>{{client.vehicle || '-'}}</td>
-            <td>
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
+              {{client.vehicle || '-'}}
+            </td>
+
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
       <span class="badge" [ngClass]="{
         'bg-primary': client.category === 'SUV',
         'bg-success': client.category === 'AUTO',
@@ -171,14 +184,16 @@
       </span>
     </td>
 
-            <td>
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
               <strong class="text-success">${{client.price ? client.price.toLocaleString() : 'Pendiente'}}</strong>
             </td>
-            <td>
+
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
               <!--span class="text-warning">{{getElapsedTime(client.spaceKey)}}</span-->
               <span class="text-warning">{{getElapsedTimeForClient(client)}}</span>
             </td>
-            <td>
+
+            <td [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'">
       <span class="text-warning">
         {{ client.exitTimestamp ? (client.exitTimestamp | date:'shortTime') : 'Aún en servicio' }}
       </span>
@@ -190,7 +205,7 @@
             </td-->
 
 
-<td class="text-center">
+<td class="text-center" [style.background-color]="getPaymentRowStyle(client).backgroundColor + ' !important'" >
               <div class="d-flex justify-content-center gap-2"> <!-- gap-2 = separación pequeña -->
                 <!-- Botón Editar -->
                 <button
@@ -213,19 +228,7 @@
           </tr>
         </tbody>
       </table>
-      <!--nav-- aria-label="Paginación de clientes">
-        <ul class="pagination justify-content-center cursor-pointer">
-          <li class="page-item" [class.disabled]="currentPage === 1">
-            <a class="page-link" (click)="setPage(currentPage - 1)">Previous</a>
-          </li>
-          <li class="page-item" *ngFor="let page of pageNumbers" [class.active]="page === currentPage">
-            <a class="page-link" (click)="setPage(page)">{{page}}</a>
-          </li>
-          <li class="page-item" [class.disabled]="currentPage === totalPages">
-            <a class="page-link" (click)="setPage(currentPage + 1)">Next</a>
-          </li>
-        </ul>
-      </!--nav-->
+
 
       <nav aria-label="Paginación de clientes">
   <ul class="pagination justify-content-center cursor-pointer">
@@ -247,43 +250,6 @@
   </div>
 </div>
 
-
-<!--div-- class="client-edit-modal" *ngIf="isEditClientOpen">
-  <div class="client-edit-modal__backdrop" (click)="closeEditClient()"></div>
-  <div class="client-edit-modal__content" role="dialog" aria-modal="true">
-    <div class="client-edit-modal__header">
-      <h3 class="client-edit-modal__title">Editar cliente</h3>
-      <button class="btn btn-outline-light btn-sm" type="button" (click)="closeEditClient()">Cerrar</button>
-    </div>
-    <div class="client-edit-modal__body">
-      <div class="client-edit-modal__grid">
-        <div class="client-edit-modal__field">
-          <label class="form-label">Valor</label>
-          <input class="form-control" type="number" [(ngModel)]="editForm.valor">
-        </div>
-        <div class="client-edit-modal__field">
-          <label class="form-label">Clave</label>
-          <input class="form-control" type="text" [(ngModel)]="editForm.clave">
-        </div>
-        <div class="client-edit-modal__field">
-          <label class="form-label">Clover</label>
-          <input class="form-control" type="number" [(ngModel)]="editForm.clover">
-        </div>
-        <div class="client-edit-modal__field client-edit-modal__field--wide">
-          <label class="form-label">Metodo de pago</label>
-          <select class="form-select" [(ngModel)]="editForm.metodoPago">
-            <option value="efectivo">Efectivo</option>
-            <option value="credito">Credito</option>
-            <option value="prepago">Prepago</option>
-          </select>
-        </div>
-      </div>
-    </div>
-    <div class="client-edit-modal__footer">
-      <button class="btn btn-outline-info" type="button" (click)="acceptEditClient()">Aceptar</button>
-    </div>
-  </div>
-</!--div-->
 
 <div class="client-edit-modal" *ngIf="isEditClientOpen">
   <div class="client-edit-modal__backdrop" (click)="closeEditClient()"></div>

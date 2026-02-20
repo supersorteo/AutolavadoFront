@@ -80,10 +80,11 @@ pageSizeDaily = 5;
   editClientHeaderMessage = '';
   private editClientHeaderTimer: any = null;
 
-  //private API_BASE = 'http://localhost:8080/api'
+  private API_BASE = 'http://localhost:8080/api'
   //private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
     //danilo pruebas
-  private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
+  //private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
+
   showReportsList = false;
   showClientsRanking = false;
   currentRankingPage = 1;
@@ -103,6 +104,23 @@ currentPageToday = 1;
 pageSizeToday = 5;
 dailyClients: Client[] = [];
 Math: any;
+
+paymentMethodColors: { [key: string]: string } = {
+  efectivo:   '#0f5c2e',
+  credito:    '#8c3f00',
+  debito:     '#084c61',
+  prepago:    '#3f1d6e',
+  qr:         '#7a1a22',
+  scaneo:     '#8c4400',
+  'S/Cargo':  '#495057',
+  '':         '#212529'
+};
+
+paymentColorsByClientId: { [clientId: string]: string } = {};
+private readonly PAYMENT_COLORS_KEY = 'exellsior_payment_colors';
+filteredDailyClientsList: Client[] = [];  // Lista filtrada real (no getter)
+paginatedDailyClientsList: Client[] = []; // Lista paginada real
+
   constructor(private autolavadoService: AutolavadoService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
 
 
@@ -139,23 +157,14 @@ Math: any;
     this.startDailyScheduler();
   }
 
-/*const saved = localStorage.getItem('dailyReportTime');
-  if (saved) {
-    this.scheduledTime = saved;
-    this.checkIfShouldGenerateDailyReport();
-  }
 
-  // Verificar cada minuto si ya pasó la hora programada
-  setInterval(() => {
-    this.checkIfShouldGenerateDailyReport();
-  }, 60 * 1000);*/
 
   this.autolavadoService.dailyClients$.subscribe(() => {
     this.calculateStats();
     this.cdr.detectChanges();
   });
 
-
+this.loadPaymentColors();
   }
 
 
@@ -164,6 +173,21 @@ Math: any;
     this.destroy$.next();
     this.destroy$.complete();
   }
+
+  private loadPaymentColors() {
+  const saved = localStorage.getItem(this.PAYMENT_COLORS_KEY);
+  if (saved) {
+    try {
+      this.paymentColorsByClientId = JSON.parse(saved);
+    } catch (e) {
+      console.warn('Error cargando colores de pago', e);
+    }
+  }
+}
+
+private savePaymentColors() {
+  localStorage.setItem(this.PAYMENT_COLORS_KEY, JSON.stringify(this.paymentColorsByClientId));
+}
 
 toggleReportsList(): void {
   this.showReportsList = !this.showReportsList;
@@ -216,13 +240,7 @@ get rankingPageNumbers(): number[] {
   return pages;
 }
 
-toggleReportsList0(): void {
-  const reportHtml = this.autolavadoService.generateReportsListHtml(); // Genera HTML dinámico
-  const blob = new Blob([reportHtml], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  window.open(url, '_blank'); // Abre new tab
-  URL.revokeObjectURL(url);
-}
+
 
 
 isToday(startTime: number | null): boolean {
@@ -321,109 +339,6 @@ setPageDaily(page: number): void {
 
 
 
-acceptEditClient0(): void {
-  if (!this.editingClient) return;
-
-  const clientId = this.editingClient.id;
-  if (!clientId) {
-    alert('Error: cliente sin ID');
-    return;
-  }
-
-  console.log('Actualizando cliente ID:', clientId);
-
-  const updatedData = {
-    name: this.editingClient.name,
-    dni: this.editingClient.dni || '',
-    phoneRaw: this.editingClient.phoneRaw,
-    phoneIntl: this.editingClient.phoneIntl,
-    code: this.editForm.clave || this.editingClient.code,
-    vehicle: this.editingClient.vehicle,
-    plate: this.editingClient.plate,
-    notes: this.editingClient.notes,
-    category: this.editingClient.category,
-    price: this.editForm.valor,
-    spaceKey: this.editingClient.spaceKey,
-    vehicleType: this.editingClient.vehicleType ? { id: this.editingClient.vehicleType.id } : null
-  };
-
-  console.log('Payload enviado al backend:', updatedData);
-
-  this.autolavadoService.updateClientInBackend(clientId, updatedData).subscribe({
-    next: (updatedClient) => {
-      console.log('Cliente actualizado en backend:', updatedClient);
-
-      // Actualizar cliente local
-      const clientsMap = this.autolavadoService.clientsSubject.value;
-      const clientKey = clientId.toString();
-      if (clientsMap[clientKey]) {
-        clientsMap[clientKey].price = updatedClient.price;
-        clientsMap[clientKey].code = updatedClient.code;
-        clientsMap[clientKey].vehicleType = updatedClient.vehicleType;
-        this.autolavadoService.clientsSubject.next({ ...clientsMap });
-        this.autolavadoService.saveAll();
-      }
-
-      // ← LA CLAVE: RECALCULAR filteredClients y todaysClients
-      this.calculateStats();  // Esto actualiza filteredClients y todaysClients
-      this.cdr.detectChanges();  // Fuerza actualización de vista
-
-      alert('Precio actualizado correctamente');
-      this.closeEditClient();
-    },
-    error: (err) => {
-      console.error('Error actualizando cliente', err);
-      alert('Error al actualizar el cliente');
-    }
-  });
-}
-
-
-acceptEditClient1(): void {
-  if (!this.editingClient) return;
-
-  const clientId = this.editingClient.id;
-  if (!clientId) {
-    alert('Error: cliente sin ID');
-    return;
-  }
-
-  const updatedData = {
-    price: this.editForm.valor,
-    code: this.editForm.clave,
-    paymentMethod: this.editForm.metodoPago,
-    clover: this.editForm.clover,
-    vehicleType: this.editingClient.vehicleType ? { id: this.editingClient.vehicleType.id } : null
-  };
-
-  console.log('Payload enviado al backend:', updatedData);
-
-  this.autolavadoService.updateClientInBackend(clientId, updatedData).subscribe({
-    next: (updatedClient) => {
-      console.log('Cliente actualizado:', updatedClient);
-
-      const clientsMap = this.autolavadoService.clientsSubject.value;
-      const clientKey = clientId.toString();
-      if (clientsMap[clientKey]) {
-        clientsMap[clientKey].price = updatedClient.price;
-        clientsMap[clientKey].code = updatedClient.code;
-        clientsMap[clientKey].paymentMethod = updatedClient.paymentMethod;
-        clientsMap[clientKey].clover = updatedClient.clover;
-        this.autolavadoService.clientsSubject.next({ ...clientsMap });
-        this.autolavadoService.saveAll();
-      }
-
-      this.calculateStats();
-      this.cdr.detectChanges();
-
-      this.showEditClientHeaderMessage('Datos actualizados correctamente');
-    },
-    error: (err) => {
-      console.error('Error', err);
-      alert('Error al actualizar');
-    }
-  });
-}
 
 private showEditClientHeaderMessage(message: string): void {
   this.editClientHeaderMessage = message;
@@ -438,7 +353,62 @@ private showEditClientHeaderMessage(message: string): void {
   }, 3000);
 }
 
-acceptEditClient(): void {
+
+
+
+getPaymentColor(clientId: string | number | undefined): string | null {
+  if (!clientId) return null;
+  const idStr = clientId.toString();
+  return this.paymentColorsByClientId[idStr] || null;
+}
+
+
+
+
+
+
+
+
+getPaymentRowStyle(client: Client): { backgroundColor: string } {
+  if (!client?.id) {
+    //console.log('getPaymentRowStyle: sin client o id → default');
+    return { backgroundColor: '#34495e' };
+  }
+
+  const idStr = client.id.toString();
+  const savedColor = this.paymentColorsByClientId[idStr];
+  const method = (client.paymentMethod || '').trim().toLowerCase();
+
+  //console.log(`getPaymentRowStyle para ID ${idStr}: método = "${method}", color guardado = ${savedColor || 'ninguno'}`);
+
+  // Prioridad 1: color persistente
+  if (savedColor) {
+   // console.log(`→ Usando color persistente: ${savedColor}`);
+    return { backgroundColor: savedColor };
+  }
+
+  // Prioridad 2: color según método actual
+  const colors = this.paymentMethodColors;
+  const color = colors[method] || '#34495e';
+  //console.log(`→ Usando color por método "${method}": ${color}`);
+
+  return { backgroundColor: color };
+}
+
+// Función auxiliar para oscurecer un color (opcional)
+private darkenColor(hex: string, factor: number = 0.2): string {
+  hex = hex.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  return '#' +
+    Math.round(r * (1 - factor)).toString(16).padStart(2, '0') +
+    Math.round(g * (1 - factor)).toString(16).padStart(2, '0') +
+    Math.round(b * (1 - factor)).toString(16).padStart(2, '0');
+}
+
+
+acceptEditClient0(): void {
 
   console.log('Botón Guardar cambios pulsado');
   if (!this.editingClient)
@@ -481,6 +451,18 @@ acceptEditClient(): void {
         this.autolavadoService.saveAll();
       }
 
+
+
+      const method = updatedClient.paymentMethod?.trim();
+      if (method && this.paymentMethodColors[method]) {
+        this.paymentColorsByClientId[clientId.toString()] = this.paymentMethodColors[method];
+        this.savePaymentColors();
+      } else {
+        // Si se quitó el método de pago → eliminar color
+        delete this.paymentColorsByClientId[clientId.toString()];
+        this.savePaymentColors();
+      }
+
       this.calculateStats();
       this.cdr.detectChanges();
 
@@ -494,6 +476,76 @@ acceptEditClient(): void {
 
 
 }
+
+
+acceptEditClient(): void {
+  console.log('Botón Guardar cambios pulsado');
+
+  if (!this.editingClient) return;
+
+  const clientId = this.editingClient.id;
+  if (!clientId) {
+    alert('Error: cliente sin ID');
+    return;
+  }
+
+  // Validación Clover
+  if (this.editForm.clover && !/^\d{4}$/.test(this.editForm.clover)) {
+    alert('El código Clover debe tener exactamente 4 dígitos numéricos');
+    return;
+  }
+
+  const updatedData = {
+    price: this.editForm.valor,
+    code: this.editForm.clave || null,
+    clover: this.editForm.clover ? parseInt(this.editForm.clover, 10) : null,
+    paymentMethod: this.editForm.metodoPago,
+    vehicleType: this.editingClient.vehicleType ? { id: this.editingClient.vehicleType.id } : null
+  };
+
+  console.log('Payload enviado al backend:', updatedData);
+
+  this.autolavadoService.updateClientInBackend(clientId, updatedData).subscribe({
+    next: (updatedClient) => {
+      console.log('Cliente actualizado:', updatedClient);
+
+      // Actualizar en memoria
+      const clientsMap = this.autolavadoService.clientsSubject.value;
+      const clientKey = clientId.toString();
+      if (clientsMap[clientKey]) {
+        clientsMap[clientKey].price = updatedClient.price;
+        clientsMap[clientKey].code = updatedClient.code;
+        clientsMap[clientKey].paymentMethod = updatedClient.paymentMethod;
+        clientsMap[clientKey].clover = updatedClient.clover;
+        this.autolavadoService.clientsSubject.next({ ...clientsMap });
+        this.autolavadoService.saveAll();
+      }
+
+      // Guardar color según método de pago
+      const method = updatedClient.paymentMethod?.trim().toLowerCase() || '';
+      if (method && this.paymentMethodColors[method]) {
+        this.paymentColorsByClientId[clientId.toString()] = this.paymentMethodColors[method];
+        console.log(`Color persistente GUARDADO para ${clientId}: ${this.paymentMethodColors[method]}`);
+      } else {
+        delete this.paymentColorsByClientId[clientId.toString()];
+        console.log(`Color eliminado para ${clientId} (método vacío)`);
+      }
+      this.savePaymentColors();
+
+      // Forzar actualización visual
+      this.calculateStats();
+      this.cdr.detectChanges();
+      this.cdr.markForCheck(); // Extra para asegurar renderizado
+
+      this.showEditClientHeaderMessage('Datos actualizados correctamente');
+    },
+    error: (err) => {
+      console.error('Error al actualizar:', err);
+      alert('Error al actualizar');
+    }
+  });
+}
+
 
 
 isCloverInvalid(): boolean {
@@ -517,10 +569,7 @@ isClientPaid(client: Client): boolean {
   return hasPaymentMethod && hasValidClover;
 }
 
-    closeEditClient0(): void {
-    this.isEditClientOpen = false;
-    this.editingClient = null;
-  }
+
 
   closeEditClient(): void {
   this.isEditClientOpen = false;
@@ -535,63 +584,7 @@ isClientPaid(client: Client): boolean {
   };
 }
 
-  private calculateStats0(): void {
-    const spacesArray = Object.values(this.spaces);
 
-    // Estadísticas generales
-    this.totalSpaces = spacesArray.length;
-    this.occupiedSpaces = spacesArray.filter(s => s.occupied).length;
-    this.freeSpaces = this.totalSpaces - this.occupiedSpaces;
-    this.occupancyRate = this.totalSpaces > 0 ? Math.round((this.occupiedSpaces / this.totalSpaces) * 100) : 0;
-
-    // Estadísticas por subsuelo
-    this.subsueloStats = this.subsuelos.map(sub => {
-      const subSpaces = spacesArray.filter(s => s.subsueloId === sub.id);
-      const subOccupied = subSpaces.filter(s => s.occupied).length;
-      const subTotal = subSpaces.length;
-      const subFree = subTotal - subOccupied;
-      const subOccupancyRate = subTotal > 0 ? Math.round((subOccupied / subTotal) * 100) : 0;
-
-      return {
-        id: sub.id,
-        label: sub.label,
-        total: subTotal,
-        occupied: subOccupied,
-        free: subFree,
-        occupancyRate: subOccupancyRate
-      };
-
-
-    });
-
-       this.currentClients = Object.values(this.clients).filter(client => {
-      const space = this.spaces[client.spaceKey];
-      return space && space.occupied;
-    });
-
-    // Estadísticas de tiempo
-    const now = Date.now();
-    this.timeStats = {
-      under1h: 0,
-      between1h3h: 0,
-      over3h: 0
-    };
-
-    spacesArray.filter(s => s.occupied).forEach(space => {
-      if (!space.startTime) return;
-
-      const elapsedMs = now - space.startTime;
-      const elapsedHours = elapsedMs / (1000 * 60 * 60);
-
-      if (elapsedHours < 1) {
-        this.timeStats.under1h++;
-      } else if (elapsedHours <= 3) {
-        this.timeStats.between1h3h++;
-      } else {
-        this.timeStats.over3h++;
-      }
-    });
-  }
 
 
 private calculateStats(): void {
@@ -670,18 +663,6 @@ private calculateStats(): void {
 
 
 
-/*openEditClient(client: Client): void {
-  this.editingClient = client;
-
-  this.editForm = {
-    valor: client.price || 0,
-    clave: client.code || '',
-    clover: client.clover ?? null,
-    metodoPago: (client.paymentMethod as 'efectivo' | 'credito' | 'prepago') || 'efectivo'
-  };
-
-  this.isEditClientOpen = true;
-}*/
 
 openEditClient(client: Client): void {
   this.editingClient = client;
@@ -709,11 +690,6 @@ openEditClient(client: Client): void {
     return this.autolavadoService.elapsedFrom(space?.startTime);
   }
 
-  onSearchClients1(): void {
-    this.autolavadoService.setSearchTerm(this.searchTerm);
-   // this.currentPage = 1;
-    this.currentPageDaily = 1;
-  }
 
   onSearchClients(): void {
   this.currentPageDaily = 1;  // Reinicia a página 1 al buscar
@@ -726,7 +702,7 @@ openEditClient(client: Client): void {
   }
 
 
-  get filteredDailyClients(): Client[] {
+  get filteredDailyClients0(): Client[] {
   if (!this.searchTerm.trim()) {
     return this.dailyClients;
   }
@@ -742,26 +718,43 @@ openEditClient(client: Client): void {
   );
 }
 
+get filteredDailyClients(): Client[] {
+  if (!this.searchTerm.trim()) {
+    this.filteredDailyClientsList = this.dailyClients;
+  } else {
+    const term = this.searchTerm.toLowerCase();
+    this.filteredDailyClientsList = this.dailyClients.filter(client =>
+      (client.name?.toLowerCase().includes(term)) ||
+      (client.code?.toLowerCase().includes(term)) ||
+      (client.phoneIntl?.includes(term)) ||
+      (client.vehicle?.toLowerCase().includes(term)) ||
+      (client.plate?.toLowerCase().includes(term)) ||
+      (client.dni?.includes(term))
+    );
+  }
+  return this.filteredDailyClientsList;
+}
+
 // NUEVO: paginación basada en los filtrados
-get paginatedDailyClients(): Client[] {
+get paginatedDailyClients0(): Client[] {
   const start = (this.currentPageDaily - 1) * this.pageSizeDaily;
   return this.filteredDailyClients.slice(start, start + this.pageSizeDaily);
+}
+
+get paginatedDailyClients(): Client[] {
+  const start = (this.currentPageDaily - 1) * this.pageSizeDaily;
+  this.paginatedDailyClientsList = this.filteredDailyClients.slice(start, start + this.pageSizeDaily);
+  return this.paginatedDailyClientsList;
 }
 
 get totalPagesDaily(): number {
   return Math.ceil(this.filteredDailyClients.length / this.pageSizeDaily);
 }
 
-get paginatedDailyClients0(): Client[] {
-  const start = (this.currentPageDaily - 1) * this.pageSizeDaily;
-  return this.dailyClients.slice(start, start + this.pageSizeDaily);
-}
 
 
 
-get totalPagesDaily0(): number {
-  return Math.ceil(this.dailyClients.length / this.pageSizeDaily);
-}
+
 
 
 
@@ -769,14 +762,7 @@ get totalPagesDaily0(): number {
     return Math.ceil(this.filteredClients.length / this.pageSize);
   }
 
-  getElapsedTimeForClient0(client: Client): string {
-  if (!client.entryTimestamp) return 'N/A';
-  const ms = Date.now() - client.entryTimestamp;
-  const mins = Math.floor(ms / 60000);
-  const hours = Math.floor(mins / 60);
-  const min = mins % 60;
-  return hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-}
+
 
 getElapsedTimeForClient(client: Client): string {
   if (!client.entryTimestamp) return 'N/A';
@@ -857,18 +843,7 @@ getElapsedTimeForClient(client: Client): string {
   }
 
 
-  saveScheduledTime1(): void {
-  localStorage.setItem('dailyReportTime', this.scheduledTime);
-  if (this.dailyInterval) clearInterval(this.dailyInterval);
-  this.startDailyScheduler();
-  alert(`Reporte programado diariamente a las ${this.scheduledTime}`);
-}
 
-saveScheduledTime0(): void {
-  localStorage.setItem('dailyReportTime', this.scheduledTime);
-  this.startDailyScheduler(); // Reinicia el scheduler con la nueva hora
-  this.showSuccessToast(`Reporte programado a las ${this.scheduledTime}`);
-}
 
 saveScheduledTime(): void {
   if (!this.scheduledTime) {
@@ -891,44 +866,9 @@ saveScheduledTime(): void {
   this.showSuccessToast(`Reporte programado a las ${this.scheduledTime}. Se podrá generar hoy con la nueva hora.`);
 }
 
-// Programar ejecución diaria
-startDailyScheduler0(): void {
-  if (!this.scheduledTime) return;
 
-  const [hours, minutes] = this.scheduledTime.split(':').map(Number);
-  const now = new Date();
-  let nextRun = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0);
 
-  if (nextRun <= now) {
-    nextRun.setDate(nextRun.getDate() + 1);
-  }
 
-  const msUntilNext = nextRun.getTime() - now.getTime();
-
-  setTimeout(() => {
-    this.generateAndSaveReport();
-    this.dailyInterval = setInterval(() => {
-      this.generateAndSaveReport();
-    }, 24 * 60 * 60 * 1000); // Cada 24h
-  }, msUntilNext);
-}
-
-private startDailyScheduler00(): void {
-  if (!this.scheduledTime) return;
-
-  // Limpiar cualquier intervalo anterior
-  if (this.dailyInterval) {
-    clearInterval(this.dailyInterval);
-  }
-
-  // Verificar cada minuto si ya pasó la hora programada hoy
-  this.dailyInterval = setInterval(() => {
-    this.checkAndGenerateDailyReport();
-  }, 60 * 1000); // Cada minuto
-
-  // Verificar inmediatamente al iniciar
-  this.checkAndGenerateDailyReport();
-}
 
 private startDailyScheduler(): void {
   console.log('%cIniciando scheduler de reporte automático', 'color: #0ea5e9; font-weight: bold;');
@@ -958,23 +898,7 @@ private startDailyScheduler(): void {
   console.log('Scheduler iniciado: verifica cada minuto');
 }
 
-private checkIfShouldGenerateDailyReport0(): void {
-  if (!this.scheduledTime) return;
 
-  const [targetHour, targetMinute] = this.scheduledTime.split(':').map(Number);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, targetMinute);
-
-  // Verificar si ya pasó la hora hoy y no se generó aún
-  const lastRun = localStorage.getItem('lastDailyReportDate');
-  const todayKey = now.toDateString();
-
-  if (now >= today && lastRun !== todayKey) {
-    console.log('Generando reporte diario automático...');
-    this.generateAndSaveReport(false);
-    localStorage.setItem('lastDailyReportDate', todayKey);
-  }
-}
 
 checkIfShouldGenerateDailyReport(): void {
   if (!this.scheduledTime) return;
@@ -996,24 +920,7 @@ checkIfShouldGenerateDailyReport(): void {
   }
 }
 
-private checkAndGenerateDailyReport0(): void {
-  if (!this.scheduledTime) return;
 
-  const [hour, minute] = this.scheduledTime.split(':').map(Number);
-  const now = new Date();
-  const todayScheduled = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
-
-  // Clave única para hoy (para no repetir)
-  const todayKey = now.toDateString();
-  const lastRun = localStorage.getItem('lastDailyReportDate');
-
-  // Si ya pasó la hora programada hoy y no se generó aún
-  if (now >= todayScheduled && lastRun !== todayKey) {
-    console.log('Generando reporte automático diario a las', this.scheduledTime);
-    this.generateAndSaveReport(false); // false = automático
-    localStorage.setItem('lastDailyReportDate', todayKey);
-  }
-}
 
 
 private checkAndGenerateDailyReport(): void {
@@ -1056,197 +963,14 @@ private checkAndGenerateDailyReport(): void {
 }
 
 
+
+
+
+
+
+
+
 generateAndSaveReport0(isManual: boolean = false): void {
-  const reportData = {
-    timestamp: new Date().toISOString(),
-    totalSpaces: this.totalSpaces,
-    occupiedSpaces: this.occupiedSpaces,
-    freeSpaces: this.freeSpaces,
-    occupancyRate: this.occupancyRate,
-    subsueloStats: JSON.stringify(this.subsueloStats),
-    timeStats: JSON.stringify(this.timeStats),
-    filteredClients: JSON.stringify(this.filteredClients)
-  };
-
-  console.log('Generando y guardando reporte...', reportData);
-
-  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
-    next: (savedReport) => {
-      console.log('Reporte guardado en backend:', savedReport);
-
-      // Generar HTML detallado
-      const detailHtml = this.autolavadoService.generateReportDetailHtml({
-        ...reportData,
-        id: savedReport.id,
-        timestamp: savedReport.timestamp,
-        subsueloStats: reportData.subsueloStats,
-        timeStats: reportData.timeStats,
-        filteredClients: reportData.filteredClients
-      } as Report);
-
-      // Descargar automáticamente
-      const blob = new Blob([detailHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Mostrar toast de éxito
-      this.showSuccessToast(
-        isManual
-          ? 'Reporte manual generado y descargado'
-          : 'Reporte diario automático generado y descargado'
-      );
-    },
-    error: (error) => {
-      console.error('Error al generar reporte', error);
-      this.showErrorToast('Error al generar el reporte');
-    }
-  });
-}
-
-
-generateAndSaveReport1(isManual: boolean = false): void {
-  // 1. Filtrar SOLO clientes del día actual (igual que la tabla Servicios del día)
-  const today = new Date().setHours(0, 0, 0, 0); // Inicio del día actual
-  const todaysFilteredClients = this.filteredClients.filter(client => {
-    const space = this.spaces[client.spaceKey];
-    if (!space || !space.occupied || !space.startTime) return false;
-    const startDate = new Date(space.startTime).setHours(0, 0, 0, 0);
-    return startDate === today;
-  });
-
-  console.log('Clientes del día para el reporte:', todaysFilteredClients.length);
-
-  // 2. Preparar datos para el reporte (usa solo los del día)
-  const reportData = {
-    timestamp: new Date().toISOString(),
-    totalSpaces: this.totalSpaces,
-    occupiedSpaces: this.occupiedSpaces,
-    freeSpaces: this.freeSpaces,
-    occupancyRate: this.occupancyRate,
-    subsueloStats: JSON.stringify(this.subsueloStats),
-    timeStats: JSON.stringify(this.timeStats),
-    filteredClients: JSON.stringify(todaysFilteredClients)  // ← SOLO del día
-  };
-
-  console.log('Generando y guardando reporte diario...', reportData);
-
-  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
-    next: (savedReport) => {
-      console.log('Reporte guardado en backend:', savedReport);
-
-      // Generar HTML detallado (usa filteredClients del día)
-      const detailHtml = this.autolavadoService.generateReportDetailHtml({
-        ...reportData,
-        id: savedReport.id,
-        timestamp: savedReport.timestamp,
-        subsueloStats: reportData.subsueloStats,
-        timeStats: reportData.timeStats,
-        filteredClients: reportData.filteredClients  // ← Solo del día
-      } as Report);
-
-      // Descargar automáticamente
-      const blob = new Blob([detailHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Toast de éxito
-      this.showSuccessToast(
-        isManual
-          ? 'Reporte manual generado y descargado (solo del día)'
-          : 'Reporte diario automático generado y descargado (solo del día)'
-      );
-    },
-    error: (error) => {
-      console.error('Error al generar reporte', error);
-      this.showErrorToast('Error al generar el reporte');
-    }
-  });
-}
-
-generateAndSaveReport2(isManual: boolean = false): void {
-  // 1. Filtrar SOLO clientes del día actual
-  const today = new Date().setHours(0, 0, 0, 0);
-  const todaysFilteredClients = this.filteredClients.filter(client => {
-    const space = this.spaces[client.spaceKey];
-    if (!space || !space.occupied || !space.startTime) return false;
-    const startDate = new Date(space.startTime).setHours(0, 0, 0, 0);
-    return startDate === today;
-  });
-
-  // 2. ENRIQUECER con startTime para el reporte
-  const clientsForReport = todaysFilteredClients.map(client => {
-    const space = this.spaces[client.spaceKey];
-    return {
-      ...client,
-      startTime: space?.startTime || null  // ← AGREGAR startTime
-    };
-  });
-
-  console.log('Clientes del día con startTime para reporte:', clientsForReport.length);
-
-  // 3. Preparar datos para el reporte
-  const reportData = {
-    timestamp: new Date().toISOString(),
-    totalSpaces: this.totalSpaces,
-    occupiedSpaces: this.occupiedSpaces,
-    freeSpaces: this.freeSpaces,
-    occupancyRate: this.occupancyRate,
-    subsueloStats: JSON.stringify(this.subsueloStats),
-    timeStats: JSON.stringify(this.timeStats),
-    filteredClients: JSON.stringify(clientsForReport)  // ← Con startTime
-  };
-
-  console.log('Generando y guardando reporte diario...', reportData);
-
-  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
-    next: (savedReport) => {
-      console.log('Reporte guardado en backend:', savedReport);
-
-      const detailHtml = this.autolavadoService.generateReportDetailHtml({
-        ...reportData,
-        id: savedReport.id,
-        timestamp: savedReport.timestamp,
-        subsueloStats: reportData.subsueloStats,
-        timeStats: reportData.timeStats,
-        filteredClients: reportData.filteredClients
-      } as Report);
-
-      const blob = new Blob([detailHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      this.showSuccessToast(
-        isManual
-          ? 'Reporte manual generado y descargado (solo del día)'
-          : 'Reporte diario automático generado y descargado (solo del día)'
-      );
-    },
-    error: (error) => {
-      console.error('Error al generar reporte', error);
-      this.showErrorToast('Error al generar el reporte');
-    }
-  });
-}
-
-generateAndSaveReport(isManual: boolean = false): void {
   // 1. OBTENER TODOS LOS CLIENTES DEL DÍA (del nuevo dailyClients$)
   const type = isManual ? 'MANUAL' : 'AUTOMÁTICO';
   console.log(`%cINICIANDO GENERACIÓN DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
@@ -1330,6 +1054,114 @@ generateAndSaveReport(isManual: boolean = false): void {
 }
 
 
+generateAndSaveReport(isManual: boolean = false): void {
+  const type = isManual ? 'MANUAL' : 'AUTOMÁTICO';
+  console.log(`%cINICIANDO GENERACIÓN DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+  const clientsForReport = this.dailyClients;
+
+  if (clientsForReport.length === 0) {
+    console.warn(`No hay clientes para el reporte ${type}. Se cancela.`);
+    if (isManual) {
+      alert('No hay clientes para generar el reporte del día');
+    }
+    return;
+  }
+
+  console.log('Clientes del día para reporte:', clientsForReport.length);
+
+  // 2. ENRIQUECER con startTime y spaceDisplayName
+  const enrichedClients = clientsForReport.map(client => {
+    const space = this.spaces[client.spaceKey || ''];
+    return {
+      ...client,
+      startTime: space?.startTime || client.entryTimestamp || null,
+      spaceDisplayName: space ? (space.displayName || client.spaceKey) : client.spaceKey || '-'
+    };
+  });
+
+  // 3. Calcular montos cobrados por método de pago
+  const paymentAmounts = {
+    efectivo: 0,
+    credito: 0,
+    prepago: 0,
+    qr: 0,
+    debito: 0,
+    scaneo: 0,
+    'S/Cargo': 0,
+    otros: 0
+  };
+
+  enrichedClients.forEach(client => {
+    const method = (client.paymentMethod || 'otros').toLowerCase();
+    const amount = client.price || 0;
+
+    if (method in paymentAmounts) {
+      paymentAmounts[method as keyof typeof paymentAmounts] += amount;
+    } else {
+      paymentAmounts.otros += amount;
+    }
+  });
+
+  // Total cobrado general (para referencia)
+  const totalCobrado = Object.values(paymentAmounts).reduce((sum, val) => sum + val, 0);
+
+  // 4. Preparar datos para el reporte (incluyendo los nuevos montos)
+  const reportData = {
+    timestamp: new Date().toISOString(),
+    totalSpaces: this.totalSpaces,
+    occupiedSpaces: this.occupiedSpaces,
+    freeSpaces: this.freeSpaces,
+    occupancyRate: this.occupancyRate,
+    subsueloStats: JSON.stringify(this.subsueloStats),
+    timeStats: JSON.stringify(this.timeStats),
+    filteredClients: JSON.stringify(enrichedClients),
+    paymentAmounts: JSON.stringify(paymentAmounts),  // ← Montos por método
+    totalCobrado: totalCobrado                     // ← Total general
+  };
+
+  console.log('Generando y guardando reporte con montos por método...', reportData);
+
+  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
+    next: (savedReport) => {
+      console.log('Reporte guardado en backend:', savedReport);
+
+      const detailHtml = this.autolavadoService.generateReportDetailHtml({
+        ...reportData,
+        id: savedReport.id,
+        timestamp: savedReport.timestamp,
+        subsueloStats: reportData.subsueloStats,
+        timeStats: reportData.timeStats,
+        filteredClients: reportData.filteredClients,
+        paymentAmounts: reportData.paymentAmounts,
+        totalCobrado: reportData.totalCobrado
+      } as Report);
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      console.log(`%cREPORTE ${type} DESCARGADO CORRECTAMENTE`, 'color: #10b981; font-weight: bold;');
+
+      this.showSuccessToast(
+        isManual
+          ? 'Reporte manual generado y descargado'
+          : 'Reporte diario automático generado y descargado'
+      );
+    },
+    error: (error) => {
+      console.error('Error al generar reporte', error);
+      this.showErrorToast('Error al generar el reporte');
+    }
+  });
+}
+
+
 
 
 // En reports.component.ts - Métodos de Toast (CORREGIDOS)
@@ -1380,7 +1212,9 @@ getSpaceByKey(spaceKey: string | null): Space | undefined {
 }
 
 
-eliminarServicio(client: Client): void {
+
+
+eliminarServicio0(client: Client): void {
   const clientName = client.name || 'este cliente';
   const vehicle = client.vehicle ? `(${client.vehicle})` : '';
 
@@ -1404,8 +1238,14 @@ eliminarServicio(client: Client): void {
     this.autolavadoService.releaseSpace(spaceKey).subscribe({
       next: () => {
         console.log('Espacio liberado correctamente');
+        delete this.paymentColorsByClientId[client.id.toString()];
+        this.savePaymentColors();
         // 2. Ahora eliminar el cliente de la BD
         this.eliminarClienteDeBD(client.id, clientName);
+
+
+
+
       },
       error: (err) => {
         console.error('Error al liberar espacio antes de eliminar:', err);
@@ -1417,6 +1257,77 @@ eliminarServicio(client: Client): void {
     this.eliminarClienteDeBD(client.id, clientName);
   }
 }
+
+eliminarServicio(client: Client): void {
+  const clientName = client.name || 'este cliente';
+  const vehicle = client.vehicle ? `(${client.vehicle})` : '';
+
+  const confirmDelete = confirm(
+    `¿Estás seguro de ELIMINAR DEFINITIVAMENTE el servicio de ${clientName} ${vehicle}?\n\n` +
+    `Esto borrará el registro del cliente de la base de datos y liberará el espacio si está ocupado.\n` +
+    `No se puede recuperar.`
+  );
+
+  if (!confirmDelete) return;
+
+  console.log(`Eliminando servicio del cliente ID: ${client.id}`);
+
+  const spaceKey = client.spaceKey;
+  const space = this.getSpaceByKey(spaceKey);
+
+  // Función interna para eliminar de BD y actualizar UI
+  const deleteFromBDAndUpdateUI = () => {
+    this.autolavadoService.deleteClientFromBackend(client.id).subscribe({
+      next: () => {
+        console.log(`Cliente ${client.id} eliminado correctamente`);
+
+        // Eliminar color persistente
+        delete this.paymentColorsByClientId[client.id.toString()];
+        this.savePaymentColors();
+        console.log('Color eliminado para cliente', client.id);
+
+        // Actualizar lista en memoria (eliminar el cliente eliminado)
+        this.dailyClients = this.dailyClients.filter(c => c.id !== client.id);
+
+       delete this.paymentColorsByClientId[client.id.toString()];
+  this.savePaymentColors();
+
+  // Recargar listas (sin método inexistente)
+  this.filteredDailyClientsList = this.dailyClients.filter(c => c.id !== client.id);
+  this.paginatedDailyClientsList = this.filteredDailyClientsList.slice(
+    (this.currentPageDaily - 1) * this.pageSizeDaily,
+    (this.currentPageDaily - 1) * this.pageSizeDaily + this.pageSizeDaily
+  );
+        // Forzar renderizado
+        this.cdr.detectChanges();
+
+        this.showSuccessToast(`Servicio de ${clientName} eliminado correctamente`);
+      },
+      error: (err) => {
+        console.error('Error al eliminar cliente', err);
+        this.showErrorToast('Error al eliminar el servicio. Intenta de nuevo.');
+      }
+    });
+  };
+
+  if (space && space.occupied) {
+    console.log(`Espacio ${spaceKey} ocupado. Liberando primero...`);
+    this.autolavadoService.releaseSpace(spaceKey).subscribe({
+      next: () => {
+        console.log('Espacio liberado correctamente');
+        deleteFromBDAndUpdateUI();
+      },
+      error: (err) => {
+        console.error('Error al liberar espacio', err);
+        alert('Error al liberar el espacio. El servicio no se eliminó.');
+      }
+    });
+  } else {
+    // Espacio ya libre → eliminar directamente
+    deleteFromBDAndUpdateUI();
+  }
+}
+
 
 private eliminarClienteDeBD(clientId: number, clientName: string): void {
   this.autolavadoService.deleteClientFromBackend(clientId).subscribe({
@@ -1436,160 +1347,7 @@ private eliminarClienteDeBD(clientId: number, clientName: string): void {
 
 
 
-generateReport0(): void {
 
-
-  const reportHtml = `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reporte Exellsior - ${new Date().toLocaleString()}</title>
-   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; font-style: italic; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Reporte Exellssior - ${new Date().toLocaleString()}</h1>
-
-  <div class="section">
-    <h2>Resumen General</h2>
-    <div class="stats">
-      <div class="stat-card">
-        <div class="stat-number">${this.totalSpaces}</div>
-        <div>Total Espacios</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number" style="color: #10b981;">${this.occupiedSpaces}</div>
-        <div>Ocupados</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number" style="color: #3b82f6;">${this.freeSpaces}</div>
-        <div>Libres</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-number" style="color: #f59e0b;">${this.occupancyRate}%</div>
-        <div>Ocupación</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2>Detalle por Subsuelo</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Subsuelo</th>
-          <th>Total</th>
-          <th>Ocupados</th>
-          <th>Libres</th>
-          <th>% Ocupación</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${this.subsueloStats.map(stat => `
-          <tr>
-            <td>${stat.label}</td>
-            <td>${stat.total}</td>
-
-            <td><span class="badge bg-danger">${stat.occupied}</span></td>
-            <td><span class="badge bg-success">${stat.free}</span></td>
-            <td>
-              <div class="progress">
-                <div class="progress-bar bg-${this.getProgressBarClass(stat.occupancyRate)}" style="width: ${stat.occupancyRate}%">
-                  ${stat.occupancyRate}%
-                </div>
-              </div>
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="section">
-    <h2>Distribución por Tiempo</h2>
-    <div class="time-stats">
-      <div class="time-card">
-        <div class="time-number" style="color: #10b981;">${this.timeStats.under1h}</div>
-        <div>Menos de 1h</div>
-      </div>
-      <div class="time-card">
-        <div class="time-number" style="color: #f59e0b;">${this.timeStats.between1h3h}</div>
-        <div>1h - 3h</div>
-      </div>
-      <div class="time-card">
-        <div class="time-number" style="color: #ef4444;">${this.timeStats.over3h}</div>
-        <div>Más de 3h</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2>Clientes Activos (${this.filteredClients.length})</h2>
-    ${this.filteredClients.length > 0 ? `
-      <table>
-        <thead>
-          <tr>
-            <th>Código</th>
-            <th>Cliente</th>
-            <th>Espacio</th>
-            <th>Teléfono</th>
-            <th>Vehículo</th>
-            <th>Tiempo</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${this.filteredClients.map(client => `
-            <tr>
-              <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
-              <td>${client.name}</td>
-              <td style="color: #3b82f6;">${client.spaceDisplayName}</td>
-              <td>+${client.phoneIntl}</td>
-              <td>${client.vehicle || '-'}</td>
-              <td style="color: #f59e0b;">${this.getElapsedTime(client.spaceKey)}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    ` : '<div class="no-data">No hay clientes actualmente</div>'}
-  </div>
-
-  <script>
-    // Auto-imprimir al cargar
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-
-  const blob = new Blob([reportHtml], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `reporte_exellssior_${new Date().toISOString().split('T')[0]}.html`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
 
 generateReport(): void {
   // Preparar datos para backend

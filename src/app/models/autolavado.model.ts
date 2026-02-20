@@ -62,6 +62,8 @@ export interface Report {
   subsueloStats: string; // JSON string
   timeStats: string; // JSON string
   filteredClients: string; // JSON string
+  paymentAmounts?: string;     // Opcional
+  totalCobrado?: number;
 }
 
 

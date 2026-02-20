@@ -269,3 +269,71 @@
     .table-dark.table-striped > tbody > tr.paid-row:hover > * {
       background-color: #5a2626 !important;
     }
+
+
+    .table-dark tr {
+  background-color: transparent !important; /* Permite override inline */
+}
+
+
+
+.table-dark tr[style*="background-color"] {
+  background-color: unset !important;
+}
+
+/* Elimina conflictos de fondo en tabla oscura */
+.table-dark,
+.table-dark td,
+.table-dark th,
+.table-dark tr,
+.table-dark tbody tr,
+.table-dark.table-striped > tbody > tr > td,
+.table-dark.table-striped > tbody > tr:hover > td {
+  background-color: transparent !important;
+}
+
+/* Asegura que el estilo inline en td gane siempre */
+.table-dark td[style*="background-color"] {
+  background-color: unset !important;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+  background-color: var(--bs-table-striped-bg) !important; /* deja rayas */
+}
+
+.table-dark tr[style*="background-color"] > td {
+  background-color: inherit !important; /* hereda el color del tr */
+}
+
+:host ::ng-deep {
+  .table-dark {
+    tr,
+    tr td,
+    tr th,
+    tbody tr,
+    tbody tr:nth-of-type(odd),
+    tbody tr:nth-of-type(even),
+    tbody tr:hover td,
+    .table-striped > tbody > tr:nth-of-type(odd) > * {
+      --bs-table-bg-type: transparent !important;
+      --bs-table-accent-bg: transparent !important;
+      background-color: transparent !important;
+      background: transparent !important;
+    }
+
+    /* Fuerza tu color personalizado cuando lo aplicas inline */
+    tr[style*="background-color"] td,
+    tr[style*="background-color"] {
+      background-color: inherit !important;
+    }
+
+    /* Si usas paid-row, asegúrate de que no tape */
+    tr.paid-row td {
+      background-color: inherit !important;
+    }
+  }
+  .table-dark tr td {
+  background-image: none !important; /* por si hay gradientes o imágenes */
+  background: inherit !important;
+}
+}

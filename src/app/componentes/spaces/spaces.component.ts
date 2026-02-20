@@ -10,6 +10,7 @@ import { ToastService } from '../../services/toast.service';
 
 import intlTelInput from 'intl-tel-input';
 import { FormatPhonePipe } from "../../services/format-phone.pipe";
+import * as XLSX from 'xlsx';
 declare var bootstrap: any;
 
 interface ClientVehicleItem {
@@ -75,6 +76,8 @@ export class SpacesComponent implements OnInit, OnDestroy {
   whatsappMessageOccupied0 = '';
   hasCopiedMessageOccupied = false;
   sentReleaseWhatsappBySpace = new Set<string>();
+  private readonly WHATSAPP_SENT_KEY = 'exellsior_whatsapp_sent_';
+  private readonly WHATSAPP_SENT_STORAGE_KEY = 'exellsior_whatsapp_sent_spaces';
   cerrarDiaModalMessage = '';
   cerrarDiaResultMessage = '';
   saveClientHeaderMessage = '';
@@ -161,10 +164,13 @@ isSavingNewClient = false;
 isVehicleAsideFromManual = false;
 newPhoneErrorMessage: string = '';
 showClientVehiclesModal = false;
-clientVehiclesStore: { [clientKey: string]: ClientVehicleItem[] } = {};
-clientVehiclesList: ClientVehicleItem[] = [];
-clientVehicleEditor: ClientVehicleItem = { model: '', plate: '', notes: '' };
+clientVehiclesList: ClientVehicleItem[] = []; // lista temporal para el modal
+//clientVehicleEditor = { model: '', plate: '', notes: '' };
 editingClientVehicleIndex: number | null = null;
+//clientVehiclesStore: { [clientKey: string]: ClientVehicleItem[] } = {};
+
+clientVehicleEditor: ClientVehicleItem = { model: '', plate: '', notes: '' };
+clientVehiclesStore: { [key: string]: ClientVehicleItem[] } = {};
 showFrequentClientModal = false;
 frequentClientVisitsSnapshot: Client[] = [];
 
@@ -198,49 +204,6 @@ frequentClientVisitsSnapshot: Client[] = [];
 });
   }
 
- /* ngOnInit(): void {
-    combineLatest([
-      this.autolavadoService.subsuelos$,
-      this.autolavadoService.spaces$,
-      this.autolavadoService.clients$,
-      this.autolavadoService.currentSubId$,
-      this.searchTermSubject
-    ]).pipe(takeUntil(this.destroy$))
-    .subscribe(([subsuelos, spaces, clients, currentSubId]) => {
-      this.subsuelos = subsuelos;
-      this.spaces = spaces;
-      this.clients = clients;
-      this.currentSubId = currentSubId;
-      this.updateCurrentSubTitle();
-      this.filterSpaces();
-    });
-
-    // Suscripción reactiva a searchTerm
-  this.searchTermSubject.subscribe(() => {
-    this.currentPage = 1;
-    this.filterSpaces();
-  });
-
-    // Timer para actualizar tiempos transcurridos
-    setInterval(() => {
-      // Forzar actualización de la vista cada minuto
-      this.cdr.detectChanges();
-    }, 60000);
-
-this.autolavadoService.loadVehicleTypes().subscribe({
-    next: (vehicles: VehicleType[]) => {
-      this.vehicles = vehicles;
-      console.log('Tipos de vehículos cargados:', vehicles);
-    },
-    error: (err) => {
-      console.error('Error al cargar vehículos', err);
-      alert('No se pudieron cargar los tipos de vehículos');
-    }
-  });
-
-
-
-  }*/
 
 ngOnInit(): void {
   // 1. VERIFICAR SI HAY DATOS EN LOCALSTORAGE
@@ -303,70 +266,6 @@ ngOnInit(): void {
   });
 
 
-
-
-
-
-
-/*this.clientForm.get('dni')?.valueChanges
-  .pipe(
-    debounceTime(600),
-    distinctUntilChanged()
-  )
-  .subscribe(dni => {
-    if (dni && dni.length >= 7) {
-      this.autolavadoService.searchClientByDni(dni).subscribe({
-        next: (client) => {
-          if (client) {
-            const isInactive = client.spaceKey === null || client.spaceKey === '';
-
-            if (isInactive) {
-              this.existingClientId = client.id;
-              alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
-            } else {
-              this.existingClientId = null;
-              alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
-            }
-
-            // Cargar todos los datos EXCEPTO el teléfono
-            this.clientForm.patchValue({
-              name: client.name || '',
-              plate: client.plate || '',
-              notes: client.notes || '',
-              vehicle: client.vehicle || '',
-              price: client.price || null,
-              entryTimestamp: Date.now()
-            }, { emitEvent: false });
-
-            // Cargar el teléfono por separado con un pequeño delay
-            setTimeout(() => {
-              const phoneToLoad = client.phoneIntl || client.phoneRaw || '';
-              if (phoneToLoad) {
-                // Primero actualizar la librería
-                if (this.iti) {
-                  this.iti.setNumber(phoneToLoad);
-                }
-                // Luego actualizar el form
-                this.clientForm.patchValue({ phone: phoneToLoad });
-              }
-            }, 150);
-
-          } else {
-            this.existingClientId = null;
-            alert('Cliente nuevo. Se creará un registro.');
-          }
-        },
-        error: () => {
-          this.existingClientId = null;
-        }
-      });
-    } else {
-      this.existingClientId = null;
-    }
-
-
-  });
-*/
 
 this.clientForm.get('dni')?.valueChanges
   .pipe(
@@ -439,6 +338,8 @@ this.clientForm.get('dni')?.valueChanges
     this.filterClientsAdmin();  // Recalcula la búsqueda actual
     console.log('allClients actualizado desde clientsSubject:', this.allClients.length);
   });
+
+  this.loadSentWhatsappState();
 
 }
 
@@ -839,38 +740,6 @@ getPhoneFormatHint(): string {
 }
 
 
-private updateNewPhoneInfo0(): void {
-  if (!this.newIti) return;
-
-  let fullNumber = this.newIti.getNumber();
-
-  if (!fullNumber.startsWith('+')) {
-    const countryData = this.newIti.getSelectedCountryData();
-    fullNumber = '+' + countryData.dialCode + fullNumber;
-  }
-
-  this.newPhoneIsValid = this.newIti.isValidNumber();
-
-  const countryData = this.newIti.getSelectedCountryData();
-  this.newPhoneFlag = this.getFlagEmoji(countryData.iso2);
-  this.newPhoneCode = '+' + countryData.dialCode;
-  this.newPhoneCountry = countryData.name || 'Desconocido';
-
-  // Guardar en el form
-  this.newClientForm.patchValue({ phoneIntl: fullNumber }, { emitEvent: false });
-
-  // Validación extra para Argentina (copia tu lógica)
-  if (countryData.dialCode === '54') {
-    const digits = fullNumber.replace('+54', '');
-    if (!digits.startsWith('9')) {
-      this.newPhoneIsValid = false;
-      console.warn('Móvil Argentina debe empezar con 9 después de +54');
-    }
-  }
-
-  this.cdr.detectChanges();
-  console.log('[updateNewPhoneInfo] Teléfono actualizado:', fullNumber, 'Válido:', this.newPhoneIsValid);
-}
 
 private updateNewPhoneInfo(): void {
   if (!this.newIti) return;
@@ -911,6 +780,37 @@ private updateNewPhoneInfo(): void {
     return iso2.toUpperCase().replace(/./g, char => String.fromCodePoint(char.charCodeAt(0) + 127397));
   }
 
+
+  private loadSentWhatsappState0() {
+  const saved = localStorage.getItem(this.WHATSAPP_SENT_KEY);
+  if (saved) {
+    const keys = JSON.parse(saved) as string[];
+    this.sentReleaseWhatsappBySpace = new Set(keys);
+  }
+}
+
+private loadSentWhatsappState() {
+  const saved = localStorage.getItem(this.WHATSAPP_SENT_STORAGE_KEY);
+  if (saved) {
+    try {
+      const keys = JSON.parse(saved) as string[];
+      this.sentReleaseWhatsappBySpace = new Set(keys);
+    } catch (e) {
+      console.warn('Error cargando estado WhatsApp enviado', e);
+    }
+  }
+}
+
+// Guardar estado en localStorage (llamar cada vez que agregues/quites)
+private saveSentWhatsappState0() {
+  const keys = Array.from(this.sentReleaseWhatsappBySpace);
+  localStorage.setItem(this.WHATSAPP_SENT_KEY, JSON.stringify(keys));
+}
+
+private saveSentWhatsappState() {
+  const keys = Array.from(this.sentReleaseWhatsappBySpace);
+  localStorage.setItem(this.WHATSAPP_SENT_STORAGE_KEY, JSON.stringify(keys));
+}
 
 resetNewClientForm() {
   this.newClientForm.reset();
@@ -978,7 +878,7 @@ selectVehicle1(vehicle: VehicleType): void {
   console.log(`Vehículo seleccionado: ${vehicle.model} - $${vehicle.price}`)
 }
 
-selectVehicle(v: VehicleType) {
+selectVehicle00(v: VehicleType) {
   if (this.isVehicleAsideFromManual) {
     // Desde modal de nuevo cliente manual
     this.newClientForm.patchValue({
@@ -1007,6 +907,51 @@ selectVehicle(v: VehicleType) {
     price: v.price,
     desde: this.isVehicleAsideFromManual ? 'nuevo cliente manual' : 'reserva de espacio'
   });
+}
+
+
+selectVehicle(v: VehicleType) {
+  // Cargar en el formulario (tu lógica actual)
+  if (this.isVehicleAsideFromManual) {
+    // Desde modal de nuevo cliente manual (si aplica)
+    this.newClientForm.patchValue({
+      vehicle: v.model,
+      category: v.category,
+      price: v.price
+    });
+  } else {
+    // Desde modal de reserva de espacio
+    this.clientForm.patchValue({
+      vehicle: v.model,
+      category: v.category,
+      price: v.price
+    });
+  }
+
+  // NUEVO: Agregar automáticamente al store de vehículos del cliente (si no existe ya)
+  const key = this.getCurrentClientVehiclesKey();
+  if (key !== `space:${this.selectedSpaceKey || 'temp'}`) { // solo si hay DNI o nombre
+    const currentList = this.clientVehiclesStore[key] || [];
+
+    // Verificar si ya existe (por modelo)
+    const exists = currentList.some(item => item.model.toLowerCase() === v.model.toLowerCase());
+    if (!exists) {
+      const newVehicle: ClientVehicleItem = {
+        model: v.model,
+        plate: this.clientForm.get('plate')?.value?.trim() || '',
+        notes: ''
+      };
+      currentList.push(newVehicle);
+      this.clientVehiclesStore[key] = currentList;
+      console.log(`Vehículo "${v.model}" agregado al store del cliente (${key})`);
+    }
+  }
+
+  // Cerrar aside
+  this.closeVehicleAside();
+  this.isVehicleAsideFromManual = false;
+
+  this.toastService.showSuccess(`Vehículo seleccionado: ${v.model} - $${v.price}`);
 }
 
 
@@ -1967,13 +1912,25 @@ closeFrequentClientModal(): void {
   this.showFrequentClientModal = false;
 }
 
-private getCurrentClientVehiclesKey(): string {
+private getCurrentClientVehiclesKey0 (): string {
   const dni = (this.clientForm.get('dni')?.value || '').toString().trim();
   const name = (this.clientForm.get('name')?.value || '').toString().trim().toLowerCase();
 
   if (dni) return `dni:${dni}`;
   if (name) return `name:${name}`;
   return `space:${this.selectedSpaceKey || 'temp'}`;
+}
+
+private getCurrentClientVehiclesKey(): string {
+  const dni = (this.clientForm.get('dni')?.value || '').toString().trim();
+  const name = (this.clientForm.get('name')?.value || '').toString().trim().toLowerCase();
+
+  if (dni) return `dni:${dni}`;
+  if (name) return `name:${name}`;
+
+  // Fallback: timestamp + espacio + random corto (casi imposible colisión)
+  const random = Math.random().toString(36).substring(2, 6);
+  return `temp:${Date.now()}-${this.selectedSpaceKey || 'unknown'}-${random}`;
 }
 
 private persistCurrentClientVehicles(): void {
@@ -2012,7 +1969,7 @@ closeClientVehiclesModal(): void {
   this.editingClientVehicleIndex = null;
 }
 
-saveClientVehicleItem(): void {
+saveClientVehicleItem0(): void {
   const model = (this.clientVehicleEditor.model || '').trim();
   if (!model) {
     alert('Debes ingresar el modelo del vehículo.');
@@ -2040,6 +1997,39 @@ saveClientVehicleItem(): void {
   this.editingClientVehicleIndex = null;
 }
 
+saveClientVehicleItem(): void {
+  const model = (this.clientVehicleEditor.model || '').trim();
+  if (!model) {
+    alert('Debes ingresar el modelo del vehículo.');
+    return;
+  }
+
+  const payload: ClientVehicleItem = {
+    model,
+    plate: (this.clientVehicleEditor.plate || '').trim(),
+    notes: (this.clientVehicleEditor.notes || '').trim()
+  };
+
+  if (this.editingClientVehicleIndex !== null) {
+    this.clientVehiclesList[this.editingClientVehicleIndex] = payload;
+  } else {
+    if (this.clientVehiclesList.length >= 4) {
+      alert('Solo se permiten hasta 4 vehículos por cliente.');
+      return;
+    }
+    this.clientVehiclesList.push(payload);
+  }
+
+  // Persistir en el store
+  const key = this.getCurrentClientVehiclesKey();
+  this.clientVehiclesStore[key] = this.clientVehiclesList.map(v => ({ ...v }));
+  console.log(`Vehículos actualizados en store para clave ${key}`);
+
+  // Resetear editor
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+}
+
 editClientVehicleItem(index: number): void {
   const item = this.clientVehiclesList[index];
   if (!item) return;
@@ -2061,7 +2051,7 @@ deleteClientVehicleItem(index: number): void {
   }
 }
 
-selectClientVehicleItem(item: ClientVehicleItem): void {
+selectClientVehicleItem0(item: ClientVehicleItem): void {
   this.clientForm.patchValue({
     vehicle: item.model || '',
     plate: item.plate || this.clientForm.value.plate || ''
@@ -2073,6 +2063,23 @@ selectClientVehicleItem(item: ClientVehicleItem): void {
   }
 
   this.closeClientVehiclesModal();
+}
+
+selectClientVehicleItem(item: ClientVehicleItem): void {
+  this.clientForm.patchValue({
+    vehicle: item.model || '',
+    plate: item.plate || this.clientForm.value.plate || ''
+  });
+
+  // Intentar cargar precio desde la lista de tipos de vehículos
+  const selectedVehicleType = this.vehicles.find(v => v.model.toLowerCase() === item.model.toLowerCase());
+  if (selectedVehicleType) {
+    this.clientForm.patchValue({ price: selectedVehicleType.price });
+  }
+
+  this.closeClientVehiclesModal();
+
+  this.toastService.showSuccess(`Vehículo cargado: ${item.model}`);
 }
 
 filterClientsAdmin(): void {
@@ -2097,7 +2104,7 @@ clearSearchClients(): void {
   this.filteredClientsAdmin = this.allClients;
 }
 
-exportClientsDbToExcel(): void {
+exportClientsDbToExcel0(): void {
   const confirmed = confirm('¿Deseas exportar la base de datos de clientes a Excel?');
   if (!confirmed) return;
 
@@ -2171,6 +2178,41 @@ exportClientsDbToExcel(): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+
+  this.toastService.showSuccess('Base de datos exportada correctamente');
+}
+
+exportClientsDbToExcel(): void {
+  const confirmed = confirm('¿Deseas exportar la base de datos de clientes a Excel?');
+  if (!confirmed) return;
+
+  const rows = this.allClients || [];
+
+  // Preparar datos
+  const data = rows.map(client => ({
+    ID: client.id,
+    Código: client.code,
+    Nombre: client.name,
+    DNI: client.dni,
+    Teléfono: client.phoneIntl,
+    Vehículo: client.vehicle,
+    Matrícula: client.plate,
+    Categoría: client.category,
+    Precio: client.price,
+    'Método Pago': client.paymentMethod,
+    Espacio: client.spaceKey,
+    Ingreso: client.entryTimestamp ? new Date(client.entryTimestamp).toLocaleString() : '-',
+    Salida: client.exitTimestamp ? new Date(client.exitTimestamp).toLocaleString() : '-'
+  }));
+
+  // Crear hoja
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Clientes');
+
+  // Generar archivo
+  const fileName = `base_datos_clientes_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(workbook, fileName);
 
   this.toastService.showSuccess('Base de datos exportada correctamente');
 }
@@ -2609,10 +2651,7 @@ saveClient0(): void {
 }
 
 saveClient(): void {
- /* if (this.clientForm.invalid) {
-    alert('Por favor completa todos los campos obligatorios.');
-    return;
-  }*/
+
 
     if (this.clientForm.invalid || !this.phoneIsValid) {
     alert('Por favor, completa todos los campos obligatorios correctamente.\n\nVerifica que el teléfono sea válido.');
@@ -3030,7 +3069,7 @@ launchWhatsApp(): void {
   }
 }
 
-launchWhatsAppRelease(): void {
+launchWhatsAppRelease0(): void {
   if (!this.selectedClient || !this.whatsappMessageOccupied) return;
   if (!this.hasCopiedMessageOccupied) return;
 
@@ -3046,6 +3085,31 @@ launchWhatsAppRelease(): void {
   }
 
   this.hasCopiedMessageOccupied = false;
+}
+
+launchWhatsAppRelease(): void {
+  if (!this.selectedClient || !this.whatsappMessageOccupied) return;
+  if (!this.hasCopiedMessageOccupied) return;
+
+  const phone = this.selectedClient.phoneIntl.replace(/\D/g, ''); // Limpia el número
+  const message = this.whatsappMessageOccupied;
+  const encoded = encodeURIComponent(message);
+  const link = `whatsapp://send?phone=${phone}&text=${encoded}`;
+
+  // Abrir WhatsApp
+  window.open(link, '_blank');
+
+  // Marcar como enviado y persistir
+  const sentSpaceKey = this.selectedSpace?.key || this.selectedSpaceKey;
+  if (sentSpaceKey) {
+    this.sentReleaseWhatsappBySpace.add(sentSpaceKey);
+    this.saveSentWhatsappState(); // Guardar en localStorage
+  }
+
+  this.hasCopiedMessageOccupied = false;
+
+  // Cerrar modal WhatsApp
+  //this.closeWhatsAppModalOccupied();
 }
 
 
@@ -3175,6 +3239,12 @@ releaseSpace(): void {
       next: () => {
         console.log('Espacio liberado y datos sincronizados');
 
+        const spaceKey = this.selectedSpace?.key || this.selectedSpaceKey;
+        if (spaceKey && this.sentReleaseWhatsappBySpace.has(spaceKey)) {
+          this.sentReleaseWhatsappBySpace.delete(spaceKey);
+          this.saveSentWhatsappState(); // Actualizar persistencia
+        }
+
         // Si había cliente, generar mensaje de liberación y abrir modal
         if (this.selectedClient) {
           this.whatsappMessageOccupied = this.autolavadoService.buildWhatsAppMessageRelease(this.selectedClient);
@@ -3182,9 +3252,11 @@ releaseSpace(): void {
           this.showWhatsAppModalOccupied = true;  // ← ABRIR MODAL AUTOMÁTICAMENTE
         }
 
+
         this.filterSpaces();
         this.cdr.detectChanges();
         this.hideModal('occupiedModal');
+
 
         alert('Espacio liberado correctamente');
       },
@@ -3196,6 +3268,8 @@ releaseSpace(): void {
     });
   }
 }
+
+
 
   private showModal(modalId: string): void {
     const modal = new bootstrap.Modal(document.getElementById(modalId));
@@ -3214,6 +3288,8 @@ releaseSpace(): void {
   resetData(): void {
   if (confirm('Esto borrará todos los datos de clientes.')) {
     this.autolavadoService.resetData();
+    this.sentReleaseWhatsappBySpace.clear();
+    localStorage.removeItem(this.WHATSAPP_SENT_KEY);
     this.filterSpaces();
     this.cdr.detectChanges();
   }
@@ -3262,6 +3338,8 @@ cerrarDia(): void {
   this.autolavadoService.resetData().subscribe({
     next: () => {
       console.log('Dia cerrado correctamente');
+      this.sentReleaseWhatsappBySpace.clear();
+      localStorage.removeItem(this.WHATSAPP_SENT_STORAGE_KEY);
 
       // Actualizar vista
       this.filterSpaces();
@@ -3477,6 +3555,28 @@ copyMessageOccupied(): void {
   });
 
 
+}
+
+copyMessageOccupied01(): void {
+  navigator.clipboard.writeText(this.whatsappMessageOccupied).then(() => {
+    this.hasCopiedMessageOccupied = true;
+
+    // Guardar en el Set y persistir
+    if (this.selectedSpace?.key) {
+      this.sentReleaseWhatsappBySpace.add(this.selectedSpace.key);
+      this.saveSentWhatsappState(); // ← Persistir en localStorage
+    }
+
+    // Toast de éxito (tu código actual)
+    const toastEl = document.getElementById('copyToast');
+    if (toastEl) {
+      const toast = new bootstrap.Toast(toastEl);
+      toast.show();
+    }
+  }).catch(err => {
+    console.error('Error copying message:', err);
+    alert('Error al copiar mensaje');
+  });
 }
 
 isReleaseMessageSentForSpace(space: Space): boolean {
