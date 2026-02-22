@@ -1,3 +1,5 @@
+
+
 export interface Subsuelo {
   id: string;
   label: string;
@@ -15,6 +17,13 @@ export interface Space {
   displayName?: string;
 }
 
+export interface ClientVehicle {
+  id?: number;
+  vehicleType: VehicleType;
+  plate?: string;
+  notes?: string;
+}
+
 export interface Client {
   id: any;
   code: string;
@@ -29,7 +38,9 @@ export interface Client {
   qrText: string;
   category?: string;  // Nueva propiedad opcional
   price?: any;
-  vehicleType?: VehicleType | null;
+  //vehicleType?: VehicleType | null;
+ // vehicleTypes?: VehicleType[];
+  clientVehicles?: ClientVehicle[];
   paymentMethod?: string;  // ← NUEVO
   clover?: number | null;
   entryTimestamp?: number;
@@ -55,6 +66,8 @@ export interface QRData {
 export interface Report {
   id: number;
   timestamp: string;
+  periodType?: 'DAILY' | 'MONTHLY';
+  periodKey?: string;
   totalSpaces: number;
   occupiedSpaces: number;
   freeSpaces: number;
@@ -73,4 +86,6 @@ export interface VehicleType {
   category: string;    // Ej: "SUV", "AUTO", "PICKUP", "ALTO PORTE", "MOTO"
   price: number;       // Ej: 40000
 }
+
+
 

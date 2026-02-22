@@ -17,6 +17,7 @@ interface RankingClienteView {
   phone: string;
   totalServices: number;
   lastVisit: string;
+  tier: 'oro' | 'plata' | 'bronce' | 'ninguno';
 }
 
 @Component({
@@ -89,14 +90,21 @@ pageSizeDaily = 5;
   showClientsRanking = false;
   currentRankingPage = 1;
   rankingPageSize = 12;
-  rankingPreview: RankingClienteView[] = Array.from({ length: 100 }, (_, i) => ({
+
+  //private readonly TIER_ORO = 10;
+  //private readonly TIER_PLATA = 5;
+  //private readonly TIER_BRONCE = 3;
+
+ /* rankingPreview: RankingClienteView[] = Array.from({ length: 100 }, (_, i) => ({
     position: i + 1,
     name: `Cliente ${String(i + 1).padStart(3, '0')}`,
     dni: `${42000000 + i}`,
     phone: `+54 9 11 ${String(1000 + i).padStart(4, '0')}-${String(2000 + i).padStart(4, '0')}`,
     totalServices: Math.max(1, 100 - i),
     lastVisit: '-'
-  }));
+  }));*/
+
+rankingList: RankingClienteView[] = [];
 
 scheduledTime: string = ''; // Hora guardada (ej. "23:30")
 private dailyInterval: any;
@@ -174,6 +182,167 @@ this.loadPaymentColors();
     this.destroy$.complete();
   }
 
+  private toTimestamp0(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value).getTime();
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+private toTimestamp(value: any, fallback?: any): number | null {
+  if (value === null || value === undefined || value === '') {
+    if (fallback !== undefined) return this.toTimestamp(fallback);
+    return null;
+  }
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value).getTime();
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+
+private getClientIdentityKey(c: Client): string {
+  const dni = (c.dni || '').toString().trim();
+  const phone = (c.phoneIntl || '').toString().replace(/\D/g, '');
+  const name = (c.name || '').toString().trim().toLowerCase();
+
+  if (dni) return `dni:${dni}`;
+  if (phone) return `phone:${phone}`;
+  return `name:${name}`;
+}
+
+/*private getTierByCount(count: number): 'oro' | 'plata' | 'bronce' | 'ninguno' {
+  if (count >= this.TIER_ORO) return 'oro';
+  if (count >= this.TIER_PLATA) return 'plata';
+  if (count >= this.TIER_BRONCE) return 'bronce';
+  return 'ninguno';
+}*/
+
+
+
+
+
+private buildMonthlyRanking0(): RankingClienteView[] {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+
+  const allClients = Object.values(this.clients || {});
+  const map = new Map<string, {
+    sample: Client;
+    count: number;
+    lastTs: number;
+  }>();
+
+  allClients.forEach(c => {
+    const ts = this.toTimestamp(c.entryTimestamp);
+    if (ts === null || ts < monthStart || ts >= nextMonthStart) return;
+
+    const key = this.getClientIdentityKey(c);
+    const current = map.get(key);
+
+    if (!current) {
+      map.set(key, { sample: c, count: 1, lastTs: ts });
+    } else {
+      current.count += 1;
+      if (ts > current.lastTs) {
+        current.lastTs = ts;
+        current.sample = c;
+      }
+    }
+  });
+
+  const ranking = Array.from(map.values())
+    .map(item => ({
+      position: 0,
+      name: item.sample.name || '-',
+      dni: item.sample.dni || '-',
+      phone: item.sample.phoneIntl || '-',
+      totalServices: item.count,
+      lastVisit: new Date(item.lastTs).toLocaleDateString('es-AR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }),
+      tier: 'ninguno' as RankingClienteView['tier']
+    }))
+    .sort((a, b) => b.totalServices - a.totalServices);
+
+  ranking.forEach((r, i) => {
+    r.position = i + 1;
+    if (r.position === 1) r.tier = 'oro';
+    else if (r.position === 2) r.tier = 'plata';
+    else if (r.position === 3) r.tier = 'bronce';
+  });
+
+  return ranking;
+}
+
+private buildMonthlyRanking(): RankingClienteView[] {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+
+  const allClients = Object.values(this.clients || {});
+  const map = new Map<string, {
+    sample: Client;
+    count: number;
+    lastTs: number;
+  }>();
+
+  allClients.forEach(c => {
+   // const ts = this.toTimestamp(c.entryTimestamp);
+    const ts = this.toTimestamp(c.entryTimestamp, c.exitTimestamp);
+
+    if (ts === null || ts < monthStart || ts >= nextMonthStart) return;
+
+    const key = this.getClientIdentityKey(c);
+    const current = map.get(key);
+
+    if (!current) {
+      map.set(key, { sample: c, count: 1, lastTs: ts });
+    } else {
+      current.count += 1;
+      if (ts > current.lastTs) {
+        current.lastTs = ts;
+        current.sample = c;
+      }
+    }
+  });
+
+  const ranking = Array.from(map.values())
+    .map(item => ({
+      position: 0,
+      name: item.sample.name || '-',
+      dni: item.sample.dni || '-',
+      phone: item.sample.phoneIntl || '-',
+      totalServices: item.count,
+      lastVisit: new Date(item.lastTs).toLocaleDateString('es-AR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      }),
+      tier: 'ninguno' as RankingClienteView['tier']
+    }))
+    .sort((a, b) => b.totalServices - a.totalServices);
+
+  ranking.forEach((r, i) => {
+    r.position = i + 1;
+    if (r.position === 1) r.tier = 'oro';
+    else if (r.position === 2) r.tier = 'plata';
+    else if (r.position === 3) r.tier = 'bronce';
+  });
+
+  return ranking;
+}
+
+
+
   private loadPaymentColors() {
   const saved = localStorage.getItem(this.PAYMENT_COLORS_KEY);
   if (saved) {
@@ -196,9 +365,17 @@ toggleReportsList(): void {
   }
 }
 
+toggleClientsRanking0(): void {
+  this.showClientsRanking = !this.showClientsRanking;
+  if (this.showClientsRanking) {
+    this.currentRankingPage = 1;
+  }
+}
+
 toggleClientsRanking(): void {
   this.showClientsRanking = !this.showClientsRanking;
   if (this.showClientsRanking) {
+    this.rankingList = this.buildMonthlyRanking();
     this.currentRankingPage = 1;
   }
 }
@@ -207,13 +384,22 @@ closeClientsRanking(): void {
   this.showClientsRanking = false;
 }
 
-get totalRankingPages(): number {
+/*get totalRankingPages(): number {
   return Math.max(1, Math.ceil(this.rankingPreview.length / this.rankingPageSize));
 }
 
 get paginatedRankingPreview(): RankingClienteView[] {
   const start = (this.currentRankingPage - 1) * this.rankingPageSize;
   return this.rankingPreview.slice(start, start + this.rankingPageSize);
+}*/
+
+get totalRankingPages(): number {
+  return Math.max(1, Math.ceil(this.rankingList.length / this.rankingPageSize));
+}
+
+get paginatedRankingPreview(): RankingClienteView[] {
+  const start = (this.currentRankingPage - 1) * this.rankingPageSize;
+  return this.rankingList.slice(start, start + this.rankingPageSize);
 }
 
 setRankingPage(page: number): void {
@@ -408,77 +594,10 @@ private darkenColor(hex: string, factor: number = 0.2): string {
 }
 
 
-acceptEditClient0(): void {
-
-  console.log('Botón Guardar cambios pulsado');
-  if (!this.editingClient)
-    return;
-
-  const clientId = this.editingClient.id;
-  if (!clientId) {
-    alert('Error: cliente sin ID');
-    return;
-  }
-
-  // Validación de Clover: exactamente 4 dígitos
-  if (this.editForm.clover && !/^\d{4}$/.test(this.editForm.clover)) {
-    alert('El código Clover debe tener exactamente 4 dígitos numéricos');
-    return;
-  }
-
-  const updatedData = {
-    price: this.editForm.valor,
-    code: this.editForm.clave || null,
-    clover: this.editForm.clover ? parseInt(this.editForm.clover, 10) : null,
-    paymentMethod: this.editForm.metodoPago,
-    vehicleType: this.editingClient.vehicleType ? { id: this.editingClient.vehicleType.id } : null
-  };
-
-  console.log('Payload enviado al backend:', updatedData);
-
-  this.autolavadoService.updateClientInBackend(clientId, updatedData).subscribe({
-    next: (updatedClient) => {
-      console.log('Cliente actualizado:', updatedClient);
-
-      const clientsMap = this.autolavadoService.clientsSubject.value;
-      const clientKey = clientId.toString();
-      if (clientsMap[clientKey]) {
-        clientsMap[clientKey].price = updatedClient.price;
-        clientsMap[clientKey].code = updatedClient.code;
-        clientsMap[clientKey].paymentMethod = updatedClient.paymentMethod;
-        clientsMap[clientKey].clover = updatedClient.clover;
-        this.autolavadoService.clientsSubject.next({ ...clientsMap });
-        this.autolavadoService.saveAll();
-      }
 
 
 
-      const method = updatedClient.paymentMethod?.trim();
-      if (method && this.paymentMethodColors[method]) {
-        this.paymentColorsByClientId[clientId.toString()] = this.paymentMethodColors[method];
-        this.savePaymentColors();
-      } else {
-        // Si se quitó el método de pago → eliminar color
-        delete this.paymentColorsByClientId[clientId.toString()];
-        this.savePaymentColors();
-      }
-
-      this.calculateStats();
-      this.cdr.detectChanges();
-
-      this.showEditClientHeaderMessage('Datos actualizados correctamente');
-    },
-    error: (err) => {
-      console.error('Error', err);
-      alert('Error al actualizar');
-    }
-  });
-
-
-}
-
-
-acceptEditClient(): void {
+/*acceptEditClient(): void {
   console.log('Botón Guardar cambios pulsado');
 
   if (!this.editingClient) return;
@@ -536,6 +655,71 @@ acceptEditClient(): void {
       this.calculateStats();
       this.cdr.detectChanges();
       this.cdr.markForCheck(); // Extra para asegurar renderizado
+
+      this.showEditClientHeaderMessage('Datos actualizados correctamente');
+    },
+    error: (err) => {
+      console.error('Error al actualizar:', err);
+      alert('Error al actualizar');
+    }
+  });
+}*/
+
+acceptEditClient(): void {
+  console.log('Botón Guardar cambios pulsado');
+
+  if (!this.editingClient) return;
+
+  const clientId = this.editingClient.id;
+  if (!clientId) {
+    alert('Error: cliente sin ID');
+    return;
+  }
+
+  // Validación Clover
+  if (this.editForm.clover && !/^\d{4}$/.test(this.editForm.clover)) {
+    alert('El código Clover debe tener exactamente 4 dígitos numéricos');
+    return;
+  }
+
+  const updatedData = {
+    price: this.editForm.valor,
+    code: this.editForm.clave || null,
+    clover: this.editForm.clover ? parseInt(this.editForm.clover, 10) : null,
+    paymentMethod: this.editForm.metodoPago
+    // <-- eliminar vehicleType (ya no existe en backend)
+  };
+
+  console.log('Payload enviado al backend:', updatedData);
+
+  this.autolavadoService.updateClientInBackend(clientId, updatedData).subscribe({
+    next: (updatedClient) => {
+      console.log('Cliente actualizado:', updatedClient);
+
+      const clientsMap = this.autolavadoService.clientsSubject.value;
+      const clientKey = clientId.toString();
+      if (clientsMap[clientKey]) {
+        clientsMap[clientKey].price = updatedClient.price;
+        clientsMap[clientKey].code = updatedClient.code;
+        clientsMap[clientKey].paymentMethod = updatedClient.paymentMethod;
+        clientsMap[clientKey].clover = updatedClient.clover;
+        this.autolavadoService.clientsSubject.next({ ...clientsMap });
+        this.autolavadoService.saveAll();
+      }
+
+      const method = updatedClient.paymentMethod?.trim().toLowerCase() || '';
+      if (method && this.paymentMethodColors[method]) {
+        this.paymentColorsByClientId[clientId.toString()] = this.paymentMethodColors[method];
+        console.log(`Color persistente GUARDADO para ${clientId}: ${this.paymentMethodColors[method]}`);
+      } else {
+        delete this.paymentColorsByClientId[clientId.toString()];
+        console.log(`Color eliminado para ${clientId} (método vacío)`);
+      }
+      this.savePaymentColors();
+
+      this.calculateStats();
+      this.cdr.detectChanges();
+      this.cdr.markForCheck();
 
       this.showEditClientHeaderMessage('Datos actualizados correctamente');
     },
@@ -1054,7 +1238,7 @@ generateAndSaveReport0(isManual: boolean = false): void {
 }
 
 
-generateAndSaveReport(isManual: boolean = false): void {
+generateAndSaveReport00(isManual: boolean = false): void {
   const type = isManual ? 'MANUAL' : 'AUTOMÁTICO';
   console.log(`%cINICIANDO GENERACIÓN DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
   const clientsForReport = this.dailyClients;
@@ -1156,6 +1340,55 @@ generateAndSaveReport(isManual: boolean = false): void {
     },
     error: (error) => {
       console.error('Error al generar reporte', error);
+      this.showErrorToast('Error al generar el reporte');
+    }
+  });
+}
+
+
+generateAndSaveReport(isManual: boolean = false): void {
+  const type = isManual ? 'MANUAL' : 'AUTOMATICO';
+  console.log(`%cINICIANDO GENERACION DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+
+  const clientsForReport = this.dailyClients;
+  if (!clientsForReport.length) {
+    if (isManual) alert('No hay clientes para generar el reporte del dia');
+    return;
+  }
+
+  const enrichedClients = this.enrichClientsForReport(clientsForReport);
+  const periodKey = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
+  const reportData = this.buildReportPayload(enrichedClients, 'DAILY', periodKey);
+
+  console.log('[DIARIO] payload reportData:', reportData);
+
+  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
+    next: (savedReport) => {
+      const detailHtml = this.autolavadoService.generateReportDetailHtml({
+        ...reportData,
+        id: savedReport.id,
+        timestamp: savedReport.timestamp,
+        subsueloStats: reportData.subsueloStats,
+        timeStats: reportData.timeStats,
+        filteredClients: reportData.filteredClients,
+        paymentAmounts: reportData.paymentAmounts,
+        totalCobrado: reportData.totalCobrado
+      } as Report);
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_exellsior_${periodKey}_${isManual ? 'manual' : 'automatico'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showSuccessToast(isManual ? 'Reporte manual generado y descargado' : 'Reporte diario automatico generado y descargado');
+    },
+    error: (error) => {
+      console.error('Error al generar reporte diario', error);
       this.showErrorToast('Error al generar el reporte');
     }
   });
@@ -1349,6 +1582,7 @@ private eliminarClienteDeBD(clientId: number, clientName: string): void {
 
 
 
+
 generateReport(): void {
   // Preparar datos para backend
   const reportData = {
@@ -1525,6 +1759,351 @@ generateReport(): void {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+
+private toMillis(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    const ms = new Date(value).getTime();
+    return isNaN(ms) ? null : ms;
+  }
+  return null;
+}
+
+/*private getClientEventTs(client: Client): number | null {
+  return this.toMillis(client.entryTimestamp) ?? this.toMillis(client.exitTimestamp);
+}*/
+
+private getMonthlyClientsForReport(referenceDate: Date = new Date()): Client[] {
+  const monthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 1).getTime();
+
+  return Object.values(this.clients || {})
+    .filter(c => {
+      const ts = this.getClientEventTs(c);
+      return ts !== null && ts >= monthStart && ts < nextMonthStart;
+    })
+    .sort((a, b) => (this.getClientEventTs(b) || 0) - (this.getClientEventTs(a) || 0));
+}
+
+
+
+private toEpoch(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : new Date(value).getTime();
+  return isNaN(n) ? null : n;
+}
+
+private getClientEventTs(c: Client): number | null {
+  return this.toEpoch(c.entryTimestamp) ?? this.toEpoch(c.exitTimestamp);
+}
+
+private enrichClientsForReport(clients: Client[]): any[] {
+  return clients.map(client => {
+    const space = this.spaces[client.spaceKey || ''];
+    return {
+      ...client,
+      startTime: space?.startTime || client.entryTimestamp || null,
+      spaceDisplayName: space ? (space.displayName || client.spaceKey) : client.spaceKey || '-'
+    };
+  });
+}
+
+private buildPaymentAmounts(clients: any[]): { [k: string]: number } {
+  const paymentAmounts: { [k: string]: number } = {
+    efectivo: 0,
+    credito: 0,
+    prepago: 0,
+    qr: 0,
+    debito: 0,
+    scaneo: 0,
+    'S/Cargo': 0,
+    otros: 0
+  };
+
+  clients.forEach(client => {
+    const method = (client.paymentMethod || 'otros').toLowerCase();
+    const amount = Number(client.price || 0);
+    if (method in paymentAmounts) paymentAmounts[method] += amount;
+    else paymentAmounts['otros'] += amount;
+  });
+
+  return paymentAmounts;
+}
+
+private buildReportPayload(enrichedClients: any[], periodType: 'DAILY' | 'MONTHLY', periodKey: string) {
+  const paymentAmounts = this.buildPaymentAmounts(enrichedClients);
+  const totalCobrado = Object.values(paymentAmounts).reduce((sum, val) => sum + val, 0);
+
+  return {
+    timestamp: new Date().toISOString(),
+    periodType,
+    periodKey,
+    totalSpaces: this.totalSpaces,
+    occupiedSpaces: this.occupiedSpaces,
+    freeSpaces: this.freeSpaces,
+    occupancyRate: this.occupancyRate,
+    subsueloStats: JSON.stringify(this.subsueloStats),
+    timeStats: JSON.stringify(this.timeStats),
+    filteredClients: JSON.stringify(enrichedClients),
+    paymentAmounts: JSON.stringify(paymentAmounts),
+    totalCobrado
+  };
+}
+
+
+
+//actualizacion
+
+private isDailyReportOfMonth(report: Report, monthKey: string): boolean {
+  const tsMonth = (report.timestamp || '').slice(0, 7);
+  if (tsMonth !== monthKey) return false;
+
+  if (report.periodType === 'MONTHLY') return false;
+  if (report.periodType === 'DAILY') return true;
+
+  // Compatibilidad con reportes viejos sin periodType
+  if (report.periodKey) return report.periodKey.length === 10; // yyyy-MM-dd => diario
+  return true; // legacy sin periodKey: asumimos diario
+}
+
+private parseJsonArraySafe(value?: string): any[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+private parseJsonObjectSafe<T extends Record<string, any>>(value?: string): T {
+  if (!value) return {} as T;
+  try {
+    const parsed = JSON.parse(value);
+    return (parsed && typeof parsed === 'object') ? parsed as T : {} as T;
+  } catch {
+    return {} as T;
+  }
+}
+
+private getReportTotalCobrado(report: Report): number {
+  if (typeof report.totalCobrado === 'number') return report.totalCobrado;
+
+  const pa = this.parseJsonObjectSafe<Record<string, number>>(report.paymentAmounts);
+  return Object.values(pa).reduce((sum, v) => sum + (Number(v) || 0), 0);
+}
+
+private buildMonthlyPayloadFromDailyReports(dailyReports: Report[], monthKey: string) {
+  const paymentTotals: Record<string, number> = {
+    efectivo: 0,
+    credito: 0,
+    prepago: 0,
+    qr: 0,
+    debito: 0,
+    scaneo: 0,
+    'S/Cargo': 0,
+    otros: 0
+  };
+
+  const mergedTimeStats = {
+    under1h: 0,
+    between1h3h: 0,
+    over3h: 0
+  };
+
+  const allClientsRaw = dailyReports.flatMap(r => this.parseJsonArraySafe(r.filteredClients));
+
+  // Evitar duplicados por id+code+entry+exit
+  const dedup = new Map<string, any>();
+  allClientsRaw.forEach(c => {
+    const key = `${c?.id ?? 'x'}|${c?.code ?? 'x'}|${c?.entryTimestamp ?? 'x'}|${c?.exitTimestamp ?? 'x'}`;
+    if (!dedup.has(key)) dedup.set(key, c);
+  });
+  const mergedClients = Array.from(dedup.values());
+
+  dailyReports.forEach(r => {
+    const pa = this.parseJsonObjectSafe<Record<string, number>>(r.paymentAmounts);
+    Object.keys(paymentTotals).forEach((k) => {
+      paymentTotals[k] += Number(pa[k] || 0);
+    });
+
+    const ts = this.parseJsonObjectSafe<Record<string, number>>(r.timeStats);
+    mergedTimeStats.under1h += Number(ts['under1h'] || 0);
+    mergedTimeStats.between1h3h += Number(ts['between1h3h'] || 0);
+    mergedTimeStats.over3h += Number(ts['over3h'] || 0);
+  });
+
+  const totalCobrado = dailyReports.reduce((sum, r) => sum + this.getReportTotalCobrado(r), 0);
+
+  // Tomamos estructura base del último diario del mes
+  const latest = dailyReports[dailyReports.length - 1];
+
+  return {
+    timestamp: new Date().toISOString(),
+    periodType: 'MONTHLY' as const,
+    periodKey: monthKey,
+    totalSpaces: latest?.totalSpaces ?? this.totalSpaces,
+    occupiedSpaces: latest?.occupiedSpaces ?? this.occupiedSpaces,
+    freeSpaces: latest?.freeSpaces ?? this.freeSpaces,
+    occupancyRate: latest?.occupancyRate ?? this.occupancyRate,
+    subsueloStats: latest?.subsueloStats ?? JSON.stringify(this.subsueloStats),
+    timeStats: JSON.stringify(mergedTimeStats),
+    filteredClients: JSON.stringify(mergedClients),
+    paymentAmounts: JSON.stringify(paymentTotals),
+    totalCobrado
+  };
+}
+
+
+
+
+
+generateAndSaveMonthlyReport0(isManual: boolean = true): void {
+  const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';
+  console.log(`%cINICIANDO REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+
+  const clientsForReport = Object.values(this.clients || {})
+    .filter(c => {
+      const ts = this.getClientEventTs(c);
+      return ts !== null && ts >= monthStart && ts < nextMonthStart;
+    })
+    .sort((a, b) => (this.getClientEventTs(b) || 0) - (this.getClientEventTs(a) || 0));
+
+  const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const runDateLabel = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  console.log('[MENSUAL] mes actual:', monthLabel);
+  console.log('[MENSUAL] total servicios:', clientsForReport.length);
+
+  if (!clientsForReport.length) {
+    if (isManual) alert('No hay servicios del mes para generar reporte.');
+    return;
+  }
+
+  const enrichedClients = this.enrichClientsForReport(clientsForReport);
+  const periodKey = now.toISOString().slice(0, 7); // yyyy-MM
+  const reportData = this.buildReportPayload(enrichedClients, 'MONTHLY', periodKey);
+
+  console.log('[MENSUAL] payload reportData:', reportData);
+
+  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
+    next: (savedReport) => {
+      const detailHtml = this.autolavadoService.generateReportDetailHtml(
+        {
+          ...reportData,
+          id: savedReport.id,
+          timestamp: savedReport.timestamp,
+          subsueloStats: reportData.subsueloStats,
+          timeStats: reportData.timeStats,
+          filteredClients: reportData.filteredClients,
+          paymentAmounts: reportData.paymentAmounts,
+          totalCobrado: reportData.totalCobrado
+        } as Report,
+        {
+          periodLabel: 'Servicios del mes',
+          periodDateLabel: `${monthLabel} hasta ${runDateLabel}`
+        }
+      );
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_mensual_exellsior_${periodKey}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showSuccessToast(`Reporte mensual generado (${monthLabel})`);
+    },
+    error: (error) => {
+      console.error('[MENSUAL] Error al generar reporte mensual', error);
+      this.showErrorToast('Error al generar el reporte mensual');
+    }
+  });
+}
+
+generateAndSaveMonthlyReport(isManual: boolean = true): void {
+  const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';
+  const now = new Date();
+  const monthKey = now.toISOString().slice(0, 7); // yyyy-MM
+  const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const runDateLabel = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  console.log(`%cINICIANDO REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+  console.log('[MENSUAL] monthKey:', monthKey);
+
+  this.http.get<Report[]>(`${this.API_BASE}/reports`).subscribe({
+    next: (allReports) => {
+      const dailyReports = allReports
+        .filter((r) => this.isDailyReportOfMonth(r, monthKey))
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+      console.log('[MENSUAL] reportes diarios encontrados:', dailyReports.length);
+      console.table(
+        dailyReports.map(r => ({
+          id: r.id,
+          periodType: r.periodType || '(legacy)',
+          periodKey: r.periodKey || '(none)',
+          timestamp: r.timestamp,
+          totalCobrado: r.totalCobrado
+        }))
+      );
+
+      if (!dailyReports.length) {
+        console.warn('[MENSUAL] No hay reportes diarios del mes para consolidar.');
+        if (isManual) alert(`No hay reportes diarios en ${monthLabel} para generar el mensual.`);
+        return;
+      }
+
+      const reportData = this.buildMonthlyPayloadFromDailyReports(dailyReports, monthKey);
+      console.log('[MENSUAL] payload consolidado:', reportData);
+
+      this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
+        next: (savedReport) => {
+          const detailHtml = this.autolavadoService.generateReportDetailHtml(
+            {
+              ...reportData,
+              id: savedReport.id,
+              timestamp: savedReport.timestamp
+            } as Report,
+            {
+              periodLabel: 'Servicios del mes',
+              periodDateLabel: `${monthLabel} hasta ${runDateLabel}`
+            }
+          );
+
+          const blob = new Blob([detailHtml], { type: 'text/html' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `reporte_mensual_exellsior_${monthKey}.html`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          this.showSuccessToast(`Reporte mensual generado (${monthLabel})`);
+        },
+        error: (error) => {
+          console.error('[MENSUAL] Error guardando reporte mensual', error);
+          this.showErrorToast('Error al guardar el reporte mensual');
+        }
+      });
+    },
+    error: (error) => {
+      console.error('[MENSUAL] Error cargando reportes para consolidar', error);
+      this.showErrorToast('Error al leer reportes diarios para el mensual');
+    }
+  });
 }
 
 

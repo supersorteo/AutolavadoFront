@@ -420,6 +420,12 @@
             Generar Manual + Guardar
           </button>
 
+          <button class="btn btn-outline-primary btn-lg px-4 shadow-sm" (click)="generateAndSaveMonthlyReport(true)">
+  <i class="bi bi-calendar-month me-2"></i>
+  Generar Mensual + Guardar
+</button>
+
+
           <!-- Comentado pero listo para usar
           <button class="btn btn-outline-secondary btn-lg px-4 shadow-sm" (click)="generateReport()">
             <i class="bi bi-download me-2"></i>
@@ -480,7 +486,7 @@
           <i class="bi bi-trophy-fill text-warning me-2"></i>
           Ranking de clientes frecuentes (Top 100)
         </h5>
-        <span class="badge bg-secondary">Solo frontend</span>
+        <!--span-- class="badge bg-secondary">Solo frontend</!--span-->
       </div>
       <button class="btn-close btn-close-white" type="button" (click)="closeClientsRanking()" aria-label="Cerrar"></button>
     </div>
@@ -500,12 +506,13 @@
               <th>Teléfono</th>
               <th>Servicios</th>
               <th>Última visita</th>
+              <th>Ranking</th>
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let client of paginatedRankingPreview">
               <td>
-                <span class="rank-badge">#{{ client.position }}</span>
+                <span class="rank-badge">{{ client.position }}</span>
               </td>
               <td>{{ client.name }}</td>
               <td>{{ client.dni }}</td>
@@ -514,6 +521,20 @@
                 <strong class="text-info">{{ client.totalServices }}</strong>
               </td>
               <td>{{ client.lastVisit }}</td>
+
+<td>
+
+  <span *ngIf="client.tier !== 'ninguno'" class="ms-2 badge"
+        [ngClass]="{
+          'bg-warning text-dark': client.tier === 'oro',
+          'bg-secondary': client.tier === 'plata',
+          'bg-bronze': client.tier === 'bronce'
+        }">
+    <i class="bi bi-award-fill me-1"></i>{{ client.tier | uppercase }}
+  </span>
+</td>
+
+
             </tr>
           </tbody>
         </table>

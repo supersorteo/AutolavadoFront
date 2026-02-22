@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef, ElementRef, ViewChild,
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 
-import { Subject, takeUntil, combineLatest, BehaviorSubject, forkJoin, debounceTime, distinctUntilChanged } from 'rxjs';
+import { Subject, takeUntil, combineLatest, BehaviorSubject, forkJoin, debounceTime, distinctUntilChanged, map, switchMap, of, catchError } from 'rxjs';
 import { Client, Space, Subsuelo, VehicleType } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
 import { QrService } from '../../services/qr.service';
@@ -17,6 +17,8 @@ interface ClientVehicleItem {
   model: string;
   plate?: string;
   notes?: string;
+  //category?: string;
+  //price?: number;
 }
 
 @Component({
@@ -46,6 +48,9 @@ export class SpacesComponent implements OnInit, OnDestroy {
 
 
   allClients: Client[] = [];
+  clientReservationsHistory: Client[] = [];
+ private activeClientVehiclesKey: string | null = null;
+
   searchTermClients = '';
   filteredClientsAdmin: Client[] = [];
   //editedSpace: any = {}; // Nueva propiedad para datos del espacio editado
@@ -170,9 +175,14 @@ editingClientVehicleIndex: number | null = null;
 //clientVehiclesStore: { [clientKey: string]: ClientVehicleItem[] } = {};
 
 clientVehicleEditor: ClientVehicleItem = { model: '', plate: '', notes: '' };
+//clientVehicleEditor: ClientVehicleItem = { model: '', category: '', price: 0 };
 clientVehiclesStore: { [key: string]: ClientVehicleItem[] } = {};
 showFrequentClientModal = false;
 frequentClientVisitsSnapshot: Client[] = [];
+
+//private readonly TIER_ORO = 10;
+//private readonly TIER_PLATA = 5;
+//private readonly TIER_BRONCE = 3;
 
   constructor(
     private autolavadoService: AutolavadoService,
@@ -267,7 +277,7 @@ ngOnInit(): void {
 
 
 
-this.clientForm.get('dni')?.valueChanges
+/*this.clientForm.get('dni')?.valueChanges
   .pipe(
     debounceTime(600),
     distinctUntilChanged()
@@ -321,6 +331,11 @@ this.clientForm.get('dni')?.valueChanges
             alert('Cliente nuevo. Se creará un registro.');
           }
         },
+
+        // Dentro del subscribe de searchClientByDni (ngOnInit)
+
+
+
         error: () => {
           this.existingClientId = null;
         }
@@ -328,7 +343,236 @@ this.clientForm.get('dni')?.valueChanges
     } else {
       this.existingClientId = null;
     }
+  });*/
+
+  /*this.clientForm.get('dni')?.valueChanges
+  .pipe(debounceTime(600), distinctUntilChanged())
+  .subscribe(dni => {
+    if (dni && dni.length >= 7) {
+      this.autolavadoService.searchClientByDni(dni).subscribe({
+        next: (client) => {
+          if (client) {
+            const isInactive = client.spaceKey === null || client.spaceKey === '';
+
+            if (isInactive) {
+              this.existingClientId = client.id;
+              alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
+            } else {
+              this.existingClientId = null;
+              alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
+            }
+
+            // NUEVO: si viene vehicleTypes → cargar lista
+            if (client.clientVehicles && client.clientVehicles.length > 0) {
+  this.clientVehiclesList = client.clientVehicles.map(cv => ({
+    model: cv.vehicleType?.model || '',
+    plate: cv.plate || '',
+    notes: cv.notes || ''
+  }));
+
+
+
+
+              this.persistCurrentClientVehicles();
+
+const primary = client.clientVehicles[0]?.vehicleType;
+  this.clientForm.patchValue({
+    name: client.name || '',
+    plate: client.plate || '',
+    notes: client.notes || '',
+    vehicle: primary?.model || '',
+    price: primary?.price || null,
+    entryTimestamp: Date.now()
+  }, { emitEvent: false });
+
+            } else {
+              this.clientForm.patchValue({
+                name: client.name || '',
+                plate: client.plate || '',
+                notes: client.notes || '',
+                vehicle: client.vehicle || '',
+                price: client.price || null,
+                entryTimestamp: Date.now()
+              }, { emitEvent: false });
+            }
+
+            setTimeout(() => {
+              const phoneToLoad = client.phoneIntl || client.phoneRaw || '';
+              if (phoneToLoad && this.iti) {
+                this.iti.setNumber(phoneToLoad);
+                this.updatePhoneInfo(false);
+                this.clientForm.patchValue({ phone: phoneToLoad }, { emitEvent: false });
+              }
+            }, 150);
+
+          } else {
+            this.existingClientId = null;
+            alert('Cliente nuevo. Se creará un registro.');
+          }
+        },
+        error: () => {
+          this.existingClientId = null;
+        }
+      });
+    } else {
+      this.existingClientId = null;
+    }
+  });*/
+
+
+/*this.clientForm.get('dni')?.valueChanges
+  .pipe(
+    debounceTime(600),
+    map((dni) => (dni || '').toString().trim()),
+    distinctUntilChanged(),
+    takeUntil(this.destroy$),
+    switchMap((dni) => {
+      if (dni.length < 7) {
+        this.existingClientId = null;
+        return of(null);
+      }
+      return this.autolavadoService.searchClientByDni(dni).pipe(
+        catchError(() => of(null))
+      );
+    })
+  )
+  .subscribe((client) => {
+    if (!client) {
+      this.existingClientId = null;
+      alert('Cliente nuevo. Se creará un registro.');
+      return;
+    }
+
+    const isInactive = client.spaceKey === null || client.spaceKey === '';
+    if (isInactive) {
+      this.existingClientId = client.id;
+      alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
+    } else {
+      this.existingClientId = null;
+      alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
+    }
+
+    // NUEVO: cargar clientVehicles con plate/notes
+    if (client.clientVehicles && client.clientVehicles.length > 0) {
+      this.clientVehiclesList = client.clientVehicles.map(cv => ({
+        model: cv.vehicleType?.model || '',
+        plate: cv.plate || '',
+        notes: cv.notes || ''
+      }));
+
+      this.persistCurrentClientVehicles();
+
+      const primary = client.clientVehicles[0]?.vehicleType;
+      this.clientForm.patchValue({
+        name: client.name || '',
+        //plate: client.plate || '',
+        //notes: client.notes || '',
+        vehicle: primary?.model || '',
+        price: primary?.price || null,
+        entryTimestamp: Date.now()
+      }, { emitEvent: false });
+
+    } else {
+      this.clientForm.patchValue({
+        name: client.name || '',
+        plate: client.plate || '',
+        notes: client.notes || '',
+        vehicle: client.vehicle || '',
+        price: client.price || null,
+        entryTimestamp: Date.now()
+      }, { emitEvent: false });
+    }
+
+    setTimeout(() => {
+      const phoneToLoad = client.phoneIntl || client.phoneRaw || '';
+      if (phoneToLoad && this.iti) {
+        this.iti.setNumber(phoneToLoad);
+        this.updatePhoneInfo(false);
+        this.clientForm.patchValue({ phone: phoneToLoad }, { emitEvent: false });
+      }
+    }, 150);
+  });*/
+
+
+this.clientForm.get('dni')?.valueChanges
+  .pipe(
+    debounceTime(600),
+    map((dni) => (dni || '').toString().trim()),
+    distinctUntilChanged(),
+    takeUntil(this.destroy$),
+    switchMap((dni) => {
+      if (dni.length < 7) {
+        this.existingClientId = null;
+        return of([] as Client[]);
+      }
+      return this.autolavadoService.getClientReservationsByDni(dni).pipe(
+        catchError(() => of([] as Client[]))
+      );
+    })
+  )
+  .subscribe((reservations) => {
+    if (!reservations.length) {
+      this.existingClientId = null;
+      alert('Cliente nuevo. Se creará un registro.');
+      return;
+    }
+
+    // Ordenar por entryTimestamp o exitTimestamp (más reciente primero)
+    reservations.sort((a, b) => {
+      const aTs = new Date(a.entryTimestamp || a.exitTimestamp || 0).getTime();
+      const bTs = new Date(b.entryTimestamp || b.exitTimestamp || 0).getTime();
+      return bTs - aTs;
+    });
+
+    const client = reservations[0];
+
+    const isInactive = client.spaceKey === null || client.spaceKey === '';
+    if (isInactive) {
+      this.existingClientId = client.id;
+      alert(`Cliente encontrado: ${client.name}\nSe reutilizará su información (sin reserva activa).`);
+    } else {
+      this.existingClientId = null;
+      alert(`Cliente encontrado: ${client.name}\nYa tiene una reserva activa.\nSe creará una NUEVA reserva para otro vehículo.`);
+    }
+
+    // Cargar vehículos desde backend (plate/notes reales)
+    if (client.clientVehicles && client.clientVehicles.length > 0) {
+      this.clientVehiclesList = client.clientVehicles.map(cv => ({
+        model: cv.vehicleType?.model || '',
+        plate: cv.plate || '',
+        notes: cv.notes || ''
+      }));
+
+      const primary = client.clientVehicles[0]?.vehicleType;
+      this.clientForm.patchValue({
+        name: client.name || '',
+        vehicle: primary?.model || '',
+        price: primary?.price || null,
+        entryTimestamp: Date.now()
+      }, { emitEvent: false });
+
+    } else {
+      this.clientForm.patchValue({
+        name: client.name || '',
+        plate: client.plate || '',
+        notes: client.notes || '',
+        vehicle: client.vehicle || '',
+        price: client.price || null,
+        entryTimestamp: Date.now()
+      }, { emitEvent: false });
+    }
+
+    setTimeout(() => {
+      const phoneToLoad = client.phoneIntl || client.phoneRaw || '';
+      if (phoneToLoad && this.iti) {
+        this.iti.setNumber(phoneToLoad);
+        this.updatePhoneInfo(false);
+        this.clientForm.patchValue({ phone: phoneToLoad }, { emitEvent: false });
+      }
+    }, 150);
   });
+
+
 
 
  this.limpiarEspaciosDeDiasAnteriores();
@@ -345,117 +589,10 @@ this.clientForm.get('dni')?.valueChanges
 
 
 
-  ngAfterViewInit0(): void {
-  this.iti = intlTelInput(this.phoneInput.nativeElement, {
-    initialCountry: 'ar',
-    preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
-    utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
-    separateDialCode: true,
-    nationalMode: false,
-    formatOnDisplay: true,
-    autoPlaceholder: 'polite',
-    placeholderNumberType: 'MOBILE'
-  });
 
-
-
-  // Escuchar input y cambio de país
-  this.phoneInput.nativeElement.addEventListener('input', () => this.updatePhoneInfo());
-  this.phoneInput.nativeElement.addEventListener('countrychange', () => this.updatePhoneInfo());
-
-this.phoneInput.nativeElement.addEventListener('input', () => {
-    this.updatePhoneInfo();
-  });
-
-  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
-    this.updatePhoneInfo();
-  });
-
-  // Escuchar cambios del formControl 'phone' (incluyendo patchValue desde DNI)
-  this.clientForm.get('phone')?.valueChanges.subscribe(newPhone => {
-    if (newPhone && this.iti) {
-      this.iti.setNumber(newPhone); // Fuerza que intl-tel-input detecte y cambie el país
-      this.updatePhoneInfo();       // Actualiza visuales
-    }
-  });
-}
-
-ngAfterViewInit00(): void {
-  this.iti = intlTelInput(this.phoneInput.nativeElement, {
-    initialCountry: 'ar',
-    preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
-    utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
-    separateDialCode: true,
-    nationalMode: false,
-    formatOnDisplay: true,
-    autoPlaceholder: 'polite',
-    placeholderNumberType: 'MOBILE'
-  });
-
-  // Listener para cuando el usuario escribe/pega (actualiza formControl)
-  this.phoneInput.nativeElement.addEventListener('input', () => {
-    this.updatePhoneInfo();
-  });
-
-  // Listener para cambio de país (solo visual)
-  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
-    this.updatePhoneInfo();
-  });
-
-  // Listener para cambios externos (ej: DNI patchValue) → solo actualiza la librería
-  this.clientForm.get('phone')?.valueChanges.subscribe(newPhone => {
-    if (newPhone && this.iti) {
-      // Evitar loop infinito: solo actualizar si el valor es diferente
-      if (this.iti.getNumber() !== newPhone) {
-        this.iti.setNumber(newPhone);
-        this.updatePhoneInfo();
-      }
-    }
-  });
-}
 
 
 ngAfterViewInit(): void {
- /* this.iti = intlTelInput(this.phoneInput.nativeElement, {
-    initialCountry: 'ar',
-    preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
-    utilsScript: 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/19.2.15/js/utils.js',
-    separateDialCode: true,
-    nationalMode: false,
-    formatOnDisplay: true,
-    autoPlaceholder: 'polite',
-    placeholderNumberType: 'MOBILE'
-  });
-
-  // Listener para cuando el usuario escribe/pega
-  this.phoneInput.nativeElement.addEventListener('input', () => {
-    this.updatePhoneInfo(true); // true = usuario escribiendo
-  });
-
-  // Listener para cambio de país
-  this.phoneInput.nativeElement.addEventListener('countrychange', () => {
-    this.updatePhoneInfo(true);
-  });
-
-  // Listener para cambios externos (ej: DNI patchValue)
-  this.clientForm.get('phone')?.valueChanges
-    .pipe(
-      debounceTime(100), // Pequeño delay para evitar loops
-      distinctUntilChanged()
-    )
-    .subscribe(newPhone => {
-      if (newPhone && this.iti) {
-        const currentNumber = this.iti.getNumber();
-
-        // Solo actualizar si el valor es diferente
-        if (currentNumber !== newPhone) {
-          this.iti.setNumber(newPhone);
-          this.updatePhoneInfo(false); // false = carga externa
-        }
-      }
-    });*/
-
-
     this.iti = intlTelInput(this.phoneInput.nativeElement, {
     initialCountry: 'ar',
     preferredCountries: ['ar', 'br', 'cl', 'co', 've', 'pe', 'bo', 'py', 'uy', 'ec', 'cu'],
@@ -542,113 +679,7 @@ ngAfterViewInit(): void {
 
 
 
-private updatePhoneInfo0(fromUserInput: boolean = false): void {
-  if (!this.iti) return;
 
-  let fullNumber: string;
-
-  if (fromUserInput) {
-    // Usuario escribiendo: tomar valor del input
-    fullNumber = this.iti.getNumber();
-  } else {
-    // Carga externa (DNI): usar el valor del form
-    fullNumber = this.iti.getNumber();
-  }
-
-  // Asegurar que tiene el signo +
-  if (!fullNumber.startsWith('+')) {
-    const countryData = this.iti.getSelectedCountryData();
-    fullNumber = '+' + countryData.dialCode + fullNumber.replace(/^\+/, '');
-  }
-
-  // Validación
-  const countryData = this.iti.getSelectedCountryData();
-  const dialCode = countryData.dialCode;
-  let isValid = false;
-  let errorMessage = '';
-
-  if (dialCode === '54') {
-    // ========================================
-    // VALIDACIÓN ESTRICTA PARA ARGENTINA
-    // ========================================
-    // Formato: +54 9 [código de área] [número]
-    // El 9 es OBLIGATORIO para móviles
-
-    const match = fullNumber.match(/^\+54(\d+)$/);
-
-    if (match) {
-      const digits = match[1]; // Todos los dígitos después de +54
-
-      // REGLA 1: Debe empezar con 9 (obligatorio para móviles)
-      if (!digits.startsWith('9')) {
-        isValid = false;
-        errorMessage = 'Los móviles argentinos deben tener el 9 después de +54';
-      } else {
-        // REGLA 2: Después del 9, validar código de área + número
-        const afterNine = digits.substring(1); // Quitar el '9'
-
-        // Códigos de área comunes en Argentina:
-        // 11 (CABA/GBA): 8 dígitos después → total 10 dígitos (9 + 11 + 8)
-        // 2XX (Provincia Bs As): 6-8 dígitos después
-        // 3XX (otras provincias): 6-7 dígitos después
-
-        if (afterNine.startsWith('11')) {
-          // Buenos Aires: 9 11 + 8 dígitos = 11 dígitos totales
-          isValid = digits.length === 11;
-          if (!isValid) {
-            errorMessage = `Buenos Aires: debe tener 8 dígitos después del 11 (formato: +54 9 11 XXXXXXXX)`;
-          }
-        } else if (afterNine.match(/^2\d{2}/)) {
-          // Provincia de Buenos Aires (código 2XX): 9 + 3 dígitos + 6-8 dígitos
-          isValid = digits.length >= 10 && digits.length <= 12;
-          if (!isValid) {
-            errorMessage = `Provincia de Buenos Aires: formato +54 9 2XX XXXXXX`;
-          }
-        } else if (afterNine.match(/^3\d{2}/)) {
-          // Otras provincias (código 3XX): 9 + 3 dígitos + 6-7 dígitos
-          isValid = digits.length >= 10 && digits.length <= 11;
-          if (!isValid) {
-            errorMessage = `Código de área 3XX: formato +54 9 3XX XXXXXX`;
-          }
-        } else if (afterNine.match(/^4\d{2}/)) {
-          // Códigos 4XX: similar a 3XX
-          isValid = digits.length >= 10 && digits.length <= 11;
-          if (!isValid) {
-            errorMessage = `Código de área 4XX: formato +54 9 4XX XXXXXX`;
-          }
-        } else {
-          // Otros códigos: validación general
-          // Mínimo: 9 + 2 dígitos de área + 6 dígitos = 9 dígitos
-          // Máximo: 9 + 4 dígitos de área + 8 dígitos = 13 dígitos
-          isValid = digits.length >= 9 && digits.length <= 13;
-          if (!isValid) {
-            errorMessage = `Formato general: +54 9 [código área] [número]`;
-          }
-        }
-      }
-    } else {
-      isValid = false;
-      errorMessage = 'Formato inválido para Argentina';
-    }
-  } else {
-    // Otros países: usar validación de la librería
-    isValid = this.iti.isValidNumber();
-  }
-
-  // Actualizar el formControl SOLO si viene del usuario
-  if (fromUserInput) {
-    this.clientForm.patchValue({ phone: fullNumber }, { emitEvent: false });
-  }
-
-  // Actualizar variables de estado
-  this.phoneIsValid = isValid;
-  this.phoneErrorMessage = errorMessage; // Nueva variable para mostrar el error
-  this.phoneCountry = countryData.name || 'Desconocido';
-  this.phoneFlag = this.getFlagEmoji(countryData.iso2);
-  this.phoneCode = '+' + dialCode;
-
-  this.cdr.detectChanges();
-}
 
 private updatePhoneInfo(fromUserInput: boolean = false): void {
   if (!this.iti) {
@@ -781,13 +812,83 @@ private updateNewPhoneInfo(): void {
   }
 
 
-  private loadSentWhatsappState0() {
-  const saved = localStorage.getItem(this.WHATSAPP_SENT_KEY);
-  if (saved) {
-    const keys = JSON.parse(saved) as string[];
-    this.sentReleaseWhatsappBySpace = new Set(keys);
+private toTimestampLocal(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return isNaN(value) ? null : value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value).getTime();
+    return isNaN(parsed) ? null : parsed;
   }
+  return null;
 }
+
+private getIdentityKeyForClient(c: Client): string {
+  const dni = (c.dni || '').toString().trim();
+  const phone = (c.phoneIntl || '').toString().replace(/\D/g, '');
+  const name = (c.name || '').toString().trim().toLowerCase();
+
+  if (dni) return `dni:${dni}`;
+  if (phone) return `phone:${phone}`;
+  return `name:${name}`;
+}
+
+
+getMonthlyServiceCountForClient(client: Client): number {
+  const key = this.getIdentityKeyForClient(client);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+
+  return (this.allClients || [])
+    .filter(c => this.getIdentityKeyForClient(c) === key)
+    .filter(c => {
+      //const ts = this.toTimestampLocal(c.entryTimestamp);
+      const ts = this.toTimestampLocal(c.entryTimestamp ?? c.exitTimestamp);
+      return ts !== null && ts >= monthStart && ts < nextMonthStart;
+    }).length;
+}
+
+/*getClientTierByCount(count: number): 'oro' | 'plata' | 'bronce' | 'ninguno' {
+  if (count >= this.TIER_ORO) return 'oro';
+  if (count >= this.TIER_PLATA) return 'plata';
+  if (count >= this.TIER_BRONCE) return 'bronce';
+  return 'ninguno';
+}*/
+
+
+
+private buildMonthlyRankingKeys(): string[] {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+
+  const all = this.allClients || [];
+  const map = new Map<string, { count: number }>();
+
+  all.forEach(c => {
+    const ts = this.toTimestampLocal(c.entryTimestamp);
+    if (ts === null || ts < monthStart || ts >= nextMonthStart) return;
+
+    const key = this.getIdentityKeyForClient(c);
+    map.set(key, { count: (map.get(key)?.count || 0) + 1 });
+  });
+
+  return Array.from(map.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 3)
+    .map(([key]) => key);
+}
+
+
+getTopTierForClient(client: Client): 'oro' | 'plata' | 'bronce' | 'ninguno' {
+  const key = this.getIdentityKeyForClient(client);
+  const topKeys = this.buildMonthlyRankingKeys();
+  if (topKeys[0] === key) return 'oro';
+  if (topKeys[1] === key) return 'plata';
+  if (topKeys[2] === key) return 'bronce';
+  return 'ninguno';
+}
+
 
 private loadSentWhatsappState() {
   const saved = localStorage.getItem(this.WHATSAPP_SENT_STORAGE_KEY);
@@ -801,11 +902,7 @@ private loadSentWhatsappState() {
   }
 }
 
-// Guardar estado en localStorage (llamar cada vez que agregues/quites)
-private saveSentWhatsappState0() {
-  const keys = Array.from(this.sentReleaseWhatsappBySpace);
-  localStorage.setItem(this.WHATSAPP_SENT_KEY, JSON.stringify(keys));
-}
+
 
 private saveSentWhatsappState() {
   const keys = Array.from(this.sentReleaseWhatsappBySpace);
@@ -939,7 +1036,9 @@ selectVehicle(v: VehicleType) {
       const newVehicle: ClientVehicleItem = {
         model: v.model,
         plate: this.clientForm.get('plate')?.value?.trim() || '',
-        notes: ''
+
+        notes: '',
+
       };
       currentList.push(newVehicle);
       this.clientVehiclesStore[key] = currentList;
@@ -956,149 +1055,49 @@ selectVehicle(v: VehicleType) {
 
 
 
+
+
 saveNewClient0() {
-  console.log('[saveNewClient] === INICIO ===');
-
-  // Marcar campos para mostrar errores
   this.newClientForm.markAllAsTouched();
-  console.log('[saveNewClient] Form marcado como tocado');
-  console.log('[saveNewClient] ¿Formulario válido?', this.newClientForm.valid);
-  console.log('[saveNewClient] ¿Teléfono válido?', this.newPhoneIsValid);
-  console.log('[saveNewClient] Valores del form:', this.newClientForm.value);
 
-  // Validación estricta
   if (this.newClientForm.invalid || !this.newPhoneIsValid) {
-    console.warn('[saveNewClient] Validación fallida → no se guarda');
-    alert('Completa todos los campos obligatorios y verifica el teléfono');
+    this.isSavingNewClient = false;
     return;
   }
 
-  const clientData = this.newClientForm.value;
-  console.log('[saveNewClient] Datos a enviar:', clientData);
-
-  this.isSavingNewClient = true;
-  console.log('[saveNewClient] Spinner activado');
-
-  this.autolavadoService.addManualClient(clientData).subscribe({
-    next: (savedClient) => {
-      console.log('[saveNewClient] Guardado exitoso:', savedClient);
-
-      this.isSavingNewClient = false;
-
-      // Mostrar éxito
-      alert('Cliente agregado correctamente');
-
-      // CERRAR MODAL DE FORMA SEGURA
-      const modalElement = document.getElementById('newClientModal');
-      if (modalElement) {
-        const modalInstance = bootstrap.Modal.getInstance(modalElement);
-        if (modalInstance) {
-          modalInstance.hide();
-          setTimeout(() => {
-  const backdrop = document.querySelector('.modal-backdrop');
-  if (backdrop) backdrop.remove();
-  document.body.classList.remove('modal-open');
-}, 300);
-          console.log('[saveNewClient] Modal cerrado con bootstrap.Modal.hide()');
-        } else {
-          console.warn('[saveNewClient] No se encontró instancia del modal');
-        }
-      } else {
-        console.warn('[saveNewClient] No se encontró elemento #newClientModal');
-      }
-
-      // Resetear formulario y variables
-      this.newClientForm.reset();
-      this.newPhoneIsValid = false;
-      this.newPhoneFlag = '';
-      this.newPhoneCode = '';
-      this.newPhoneCountry = '';
-      if (this.newIti) {
-        this.newIti.setNumber('');
-        this.newIti.setCountry('ar');
-      }
-
-      // Recargar lista
-      this.loadAllClientsFromBackend();
-      this.cdr.detectChanges();
-      console.log('[saveNewClient] Lista recargada');
-
-      this.cdr.detectChanges();
-      console.log('[saveNewClient] Change detection forzado');
-    },
-
-    error: (err) => {
-      console.error('[saveNewClient] ERROR al guardar:', err);
-      this.isSavingNewClient = false;
-
-      const msg = err.error?.message || err.message || 'Error desconocido';
-      alert('Error al guardar: ' + msg);
-      console.error('[saveNewClient] Mensaje mostrado:', msg);
-    },
-
-    complete: () => {
-      console.log('[saveNewClient] === FINALIZADO (complete) ===');
-      this.isSavingNewClient = false; // por seguridad
-      this.cdr.detectChanges();
-    }
-  });
-}
-
-saveNewClient() {
-  console.log('[saveNewClient] === INICIO ===');
-
-  // Marcar todos los campos para mostrar errores
-  this.newClientForm.markAllAsTouched();
-  console.log('[saveNewClient] Form marcado como tocado');
-
-  // Validación manual + teléfono
-  if (this.newClientForm.invalid || !this.newPhoneIsValid) {
-    console.warn('[saveNewClient] Validación fallida');
-    this.isSavingNewClient = false;
-    return; // No envía nada
-  }
+  const selectedVehicleModel = this.newClientForm.value.vehicle;
+  const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
 
   const clientData = {
     ...this.newClientForm.value,
     phoneIntl: this.newClientForm.value.phoneIntl,
     vehicle: this.newClientForm.value.vehicle,
     plate: this.newClientForm.value.plate,
-    price: this.newClientForm.value.price
+    price: this.newClientForm.value.price,
+    vehicleTypes: selectedVehicle ? [{ id: selectedVehicle.id }] : []
   };
-
-  console.log('[saveNewClient] Datos a enviar:', clientData);
 
   this.isSavingNewClient = true;
 
   this.autolavadoService.addManualClient(clientData).subscribe({
     next: (savedClient) => {
-      console.log('[saveNewClient] Guardado exitoso:', savedClient);
       this.isSavingNewClient = false;
-
       alert('Cliente agregado correctamente');
 
-          const modalElement = document.getElementById('newClientModal');
+      const modalElement = document.getElementById('newClientModal');
       if (modalElement) {
         const modalInstance = bootstrap.Modal.getInstance(modalElement);
         if (modalInstance) {
           modalInstance.hide();
           setTimeout(() => {
-           const backdrop = document.querySelector('.modal-backdrop');
-           if (backdrop) backdrop.remove();
-           document.body.classList.remove('modal-open');
-         }, 300);
-          console.log('[saveNewClient] Modal cerrado con bootstrap.Modal.hide()');
-        } else {
-          console.warn('[saveNewClient] No se encontró instancia del modal');
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+            document.body.classList.remove('modal-open');
+          }, 300);
         }
-      } else {
-        console.warn('[saveNewClient] No se encontró elemento #newClientModal');
       }
-      // Cerrar modal
-      const modal = bootstrap.Modal.getInstance(document.getElementById('newClientModal'));
-      if (modal) modal.hide();
 
-          this.newClientForm.reset();
+      this.newClientForm.reset();
       this.newPhoneIsValid = false;
       this.newPhoneFlag = '';
       this.newPhoneCode = '';
@@ -1109,21 +1108,85 @@ saveNewClient() {
         this.newIti.setCountry('ar');
       }
 
-      // Recargar lista
       this.loadAllClientsFromBackend();
       this.cdr.detectChanges();
-      console.log('[saveNewClient] Lista recargada');
-
-      this.cdr.detectChanges();
-      console.log('[saveNewClient] Change detection forzado');
     },
     error: (err) => {
-      console.error('[saveNewClient] ERROR:', err);
       this.isSavingNewClient = false;
       alert('Error al guardar: ' + (err.error?.message || 'Intenta de nuevo'));
     }
   });
 }
+
+
+saveNewClient() {
+  this.newClientForm.markAllAsTouched();
+
+  if (this.newClientForm.invalid || !this.newPhoneIsValid) {
+    this.isSavingNewClient = false;
+    return;
+  }
+
+  const selectedVehicleModel = this.newClientForm.value.vehicle;
+  const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+  // construir clientVehicles
+  const clientVehicles = selectedVehicle ? [{
+    vehicleType: { id: selectedVehicle.id },
+    plate: this.newClientForm.value.plate || '',
+    notes: this.newClientForm.value.notes || ''
+  }] : [];
+
+  const clientData = {
+    ...this.newClientForm.value,
+    phoneIntl: this.newClientForm.value.phoneIntl,
+    vehicle: this.newClientForm.value.vehicle,
+    plate: this.newClientForm.value.plate,
+    price: this.newClientForm.value.price,
+    clientVehicles   // <-- en vez de vehicleTypes
+  };
+
+  this.isSavingNewClient = true;
+
+  this.autolavadoService.addManualClient(clientData).subscribe({
+    next: (savedClient) => {
+      this.isSavingNewClient = false;
+      alert('Cliente agregado correctamente');
+
+      const modalElement = document.getElementById('newClientModal');
+      if (modalElement) {
+        const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (modalInstance) {
+          modalInstance.hide();
+          setTimeout(() => {
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+            document.body.classList.remove('modal-open');
+          }, 300);
+        }
+      }
+
+      this.newClientForm.reset();
+      this.newPhoneIsValid = false;
+      this.newPhoneFlag = '';
+      this.newPhoneCode = '';
+      this.newPhoneCountry = '';
+
+      if (this.newIti) {
+        this.newIti.setNumber('');
+        this.newIti.setCountry('ar');
+      }
+
+      this.loadAllClientsFromBackend();
+      this.cdr.detectChanges();
+    },
+    error: (err) => {
+      this.isSavingNewClient = false;
+      alert('Error al guardar: ' + (err.error?.message || 'Intenta de nuevo'));
+    }
+  });
+}
+
 
 // Cerrar modal
 closeNewClientModal() {
@@ -1152,393 +1215,6 @@ get vehiclePageNumbers(): number[] {
 
 
 
-onPhoneInput0(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  let phone = input.value.trim().replace(/\s+/g, ''); // Quitar espacios
-
-  // Si empieza con + → tomar el código de país
-  if (phone.startsWith('+')) {
-    const code = phone.substring(1, phone.length).replace(/[^0-9]/g, ''); // Solo números
-    this.detectCountryFromCode(code);
-  } else {
-    // Si no tiene +, asumir Argentina por defecto (+54)
-    this.detectCountryFromCode('54');
-    phone = '+54' + phone; // Agregar +54 automáticamente
-    input.value = phone;   // Mostrar con +54
-  }
-
-  // Validación básica internacional (8-15 dígitos)
-  const digitsOnly = phone.replace(/[^0-9]/g, '');
-  this.phoneIsValid = digitsOnly.length >= 8 && digitsOnly.length <= 15;
-
-  // Guardar el teléfono limpio en el formulario (con + y código)
-  this.clientForm.patchValue({ phone: phone });
-}
-
-onPhoneInput1(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  let phone = input.value.trim();
-
-  let detectedCode = '54'; // Argentina por defecto
-
-  // Limpiar caracteres no numéricos excepto el +
-  phone = phone.replace(/[^0-9+]/g, '');
-
-  if (phone.startsWith('+')) {
-    // Extraer posible código de país (hasta 3 dígitos)
-    const possibleCode = phone.substring(1, 4);
-    if (this.countryPhonePatterns[possibleCode]) {
-      detectedCode = possibleCode;
-    } else {
-      // Si no encuentra código válido, mantener default
-    }
-  }
-
-  this.detectCountryFromCode(detectedCode);
-
-  // Validación básica: 8-15 dígitos totales (incluyendo código)
-  const digitsOnly = phone.replace(/[^0-9]/g, '');
-  this.phoneIsValid = digitsOnly.length >= 8 && digitsOnly.length <= 15;
-
-  // Guardar el teléfono tal como lo escribió el usuario
-  this.clientForm.patchValue({ phone });
-}
-
-
-onPhoneInput2(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  let phone = input.value.trim();
-
-  let detectedCode = '54'; // Argentina por defecto
-
-  // Limpiar caracteres no numéricos excepto el +
-  phone = phone.replace(/[^0-9+]/g, '');
-
-  if (phone.startsWith('+')) {
-    // Extraer posible código de país (hasta 3 dígitos)
-    const possibleCode = phone.substring(1, 4);
-    if (this.countryPhonePatterns[possibleCode]) {
-      detectedCode = possibleCode;
-    } else {
-      // Si no encuentra código válido, mantener default
-    }
-  }
-
-  this.detectCountryFromCode(detectedCode);
-
-  // Validación básica: 8-15 dígitos totales (incluyendo código)
-  const digitsOnly = phone.replace(/[^0-9]/g, '');
-  this.phoneIsValid = digitsOnly.length >= 8 && digitsOnly.length <= 15;
-
-  // Guardar el teléfono tal como lo escribió el usuario
-  this.clientForm.patchValue({ phone });
-}
-
-onPhoneInput3(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  let phone = input.value.trim();
-
-  // Limpiar todo excepto números y el signo +
-  phone = phone.replace(/[^0-9+]/g, '');
-
-  let currentCode: string | null = null;
-
-  // Si hay + → intentar detectar código
-  if (phone.startsWith('+')) {
-    // Buscar el código más largo posible que coincida (hasta 3 dígitos)
-    for (let len = 3; len >= 1; len--) {
-      const possible = phone.substring(1, len + 1);
-      if (this.countryPhonePatterns[possible]) {
-        currentCode = possible;
-        break;
-      }
-    }
-  }
-
-  // Si encontramos código → fijarlo (y mantenerlo)
-  if (currentCode) {
-    this.detectedCountryCode = currentCode;
-  }
-  // Si el usuario borra el + o el código → resetear a default
-  else if (!phone.startsWith('+') || phone === '+') {
-    this.detectedCountryCode = null;
-  }
-
-  // Código a usar (fijado o default)
-  const codeToUse = this.detectedCountryCode || '54';
-  this.detectCountryFromCode(codeToUse);
-
-  // Extraer solo los dígitos locales (sin el + ni código)
-  let localDigits = phone;
-  if (phone.startsWith('+' + codeToUse)) {
-    localDigits = phone.substring(codeToUse.length + 1);
-  } else {
-    localDigits = phone.replace('+', ''); // Por si queda algún +
-  }
-
-  // Validación estricta según país
-  const country = this.countryPhonePatterns[codeToUse];
-  this.phoneIsValid = country
-    ? localDigits.length === country.localDigits
-    : (localDigits.length >= 8 && localDigits.length <= 15); // fallback genérico
-
-  // Guardar teléfono completo (con + y código)
-  this.clientForm.patchValue({ phone: phone });
-}
-
-
-onPhoneInput4(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  let phone = input.value.trim();
-
-  // Limpiar todo menos números y +
-  phone = phone.replace(/[^0-9+]/g, '');
-
-  let detectedCode = '54'; // Default Argentina
-
-  if (phone.startsWith('+')) {
-    // Buscar código de país
-    for (let i = 1; i <= 4; i++) {
-      const possible = phone.substring(1, i + 1);
-      if (this.countryPhonePatterns[possible]) {
-        detectedCode = possible;
-        break;
-      }
-    }
-  }
-
-  this.detectedCountryCode = detectedCode;
-  this.detectCountryFromCode(detectedCode);
-
-  // Extraer dígitos locales (quitar + y código)
-  let localDigits = phone;
-  if (phone.startsWith('+' + detectedCode)) {
-    localDigits = phone.substring(detectedCode.length + 1);
-  } else {
-    localDigits = phone.replace('+', '');
-  }
-
-  // Validación exacta para Argentina: 10 dígitos locales (9 + 9)
-  const country = this.countryPhonePatterns[detectedCode];
-  let isValid = false;
-
-  if (country) {
-    isValid = localDigits.length === country.localDigits;
-  } else {
-    isValid = localDigits.length >= 8 && localDigits.length <= 15;
-  }
-
-  this.phoneIsValid = isValid;
-  this.clientForm.patchValue({ phone });
-
-  // Opcional: mostrar con formato limpio
-  // input.value = `+${detectedCode}${localDigits}`;
-}
-
-
-
-onPhoneInput(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  let phone = input.value.trim();
-
-  // Limpiar todo menos números y +
-  phone = phone.replace(/[^0-9+]/g, '');
-
-  let detectedCode = '54'; // Default Argentina
-
-  if (phone.startsWith('+')) {
-    // Buscar código de país
-    for (let i = 1; i <= 4; i++) {
-      const possible = phone.substring(1, i + 1);
-      if (this.countryPhonePatterns[possible]) {
-        detectedCode = possible;
-        break;
-      }
-    }
-  }
-
-  this.detectedCountryCode = detectedCode;
-  this.detectCountryFromCode(detectedCode);
-
-  // Extraer dígitos locales (quitar + y código)
-  let localDigits = phone;
-  if (phone.startsWith('+' + detectedCode)) {
-    localDigits = phone.substring(detectedCode.length + 1);
-  } else {
-    localDigits = phone.replace('+', '');
-  }
-
-  // Validación específica para Argentina: 10 o 11 dígitos locales
-  const country = this.countryPhonePatterns[detectedCode];
-  let isValid = false;
-
-  if (country) {
-    if (detectedCode === '54') {
-      // Argentina: permite 10 o 11 dígitos locales (más realista)
-      isValid = localDigits.length === 10 || localDigits.length === 11;
-    } else {
-      // Otros países: longitud exacta
-      isValid = localDigits.length === country.localDigits;
-    }
-  } else {
-    // Fallback genérico
-    isValid = localDigits.length >= 8 && localDigits.length <= 15;
-  }
-
-  this.phoneIsValid = isValid;
-  this.clientForm.patchValue({ phone });
-}
-
-
-
-
-public countryPhonePatterns: { [code: string]: { name: string; flag: string; code: string; localDigits: number } } = {
-  '54': { name: 'Argentina', flag: '🇦🇷', code: '+54', localDigits: 10 },  // 9 + 9 dígitos (o 10 sin 9)
-  '55': { name: 'Brasil', flag: '🇧🇷', code: '+55', localDigits: 10 },    // 10-11 dígitos
-  '56': { name: 'Chile', flag: '🇨🇱', code: '+56', localDigits: 9 },
-  '57': { name: 'Colombia', flag: '🇨🇴', code: '+57', localDigits: 10 },
-  '58': { name: 'Venezuela', flag: '🇻🇪', code: '+58', localDigits: 10 },
-  '51': { name: 'Perú', flag: '🇵🇪', code: '+51', localDigits: 9 },
-  '591': { name: 'Bolivia', flag: '🇧🇴', code: '+591', localDigits: 8 },
-  '595': { name: 'Paraguay', flag: '🇵🇾', code: '+595', localDigits: 9 },
-  '598': { name: 'Uruguay', flag: '🇺🇾', code: '+598', localDigits: 8 },
-  '593': { name: 'Ecuador', flag: '🇪🇨', code: '+593', localDigits: 9 },
-  '53': { name: 'Cuba', flag: '🇨🇺', code: '+53', localDigits: 8 },
-  '52': { name: 'México', flag: '🇲🇽', code: '+52', localDigits: 10 },
-  '1': { name: 'EE.UU./Canadá', flag: '🇺🇸', code: '+1', localDigits: 10 },
-  '34': { name: 'España', flag: '🇪🇸', code: '+34', localDigits: 9 },
-};
-
-
-private detectCountryFromCode0(code: string): void {
-  const countryMap: { [key: string]: { name: string; flag: string } } = {
-    // Argentina y vecinos cercanos (los más probables)
-    '54': { name: 'Argentina', flag: '🇦🇷' },
-    '55': { name: 'Brasil', flag: '🇧🇷' },
-    '56': { name: 'Chile', flag: '🇨🇱' },
-    '57': { name: 'Colombia', flag: '🇨🇴' },
-    '58': { name: 'Venezuela', flag: '🇻🇪' },
-    '51': { name: 'Perú', flag: '🇵🇪' },
-    '591': { name: 'Bolivia', flag: '🇧🇴' },
-    '595': { name: 'Paraguay', flag: '🇵🇾' },
-    '598': { name: 'Uruguay', flag: '🇺🇾' },
-    '593': { name: 'Ecuador', flag: '🇪🇨' },
-    '597': { name: 'Surinam', flag: '🇸🇷' },
-    '592': { name: 'Guyana', flag: '🇬🇾' },
-    '53': { name: 'Cuba', flag: '🇨🇺' },
-
-    // Otros muy comunes en la región
-    '52': { name: 'México', flag: '🇲🇽' },
-    '1': { name: 'Estados Unidos / Canadá', flag: '🇺🇸' },
-    '34': { name: 'España', flag: '🇪🇸' },
-    '507': { name: 'Panamá', flag: '🇵🇦' },
-    '506': { name: 'Costa Rica', flag: '🇨🇷' },
-    '505': { name: 'Nicaragua', flag: '🇳🇮' },
-    '504': { name: 'Honduras', flag: '🇭🇳' },
-    '503': { name: 'El Salvador', flag: '🇸🇻' },
-    '502': { name: 'Guatemala', flag: '🇬🇹' },
-
-    // Fallback para códigos desconocidos
-    'default': { name: 'Desconocido', flag: '🌍' }
-  };
-
-  const country = countryMap[code] || countryMap['default'];
-  this.phoneCountry = country.name;
-  this.phoneFlag = country.flag;
-}
-
-
-
-
-private detectCountryFromCode(code: string): void {
-  const countryMap: { [key: string]: { name: string; flag: string; code: string } } = {
-    '54': { name: 'Argentina', flag: '🇦🇷', code: '+54' },
-    '55': { name: 'Brasil', flag: '🇧🇷', code: '+55' },
-    '56': { name: 'Chile', flag: '🇨🇱', code: '+56' },
-    '57': { name: 'Colombia', flag: '🇨🇴', code: '+57' },
-    '58': { name: 'Venezuela', flag: '🇻🇪', code: '+58' },
-    '51': { name: 'Perú', flag: '🇵🇪', code: '+51' },
-    '591': { name: 'Bolivia', flag: '🇧🇴', code: '+591' },
-    '595': { name: 'Paraguay', flag: '🇵🇾', code: '+595' },
-    '598': { name: 'Uruguay', flag: '🇺🇾', code: '+598' },
-    '593': { name: 'Ecuador', flag: '🇪🇨', code: '+593' },
-    '597': { name: 'Surinam', flag: '🇸🇷', code: '+597' },
-    '592': { name: 'Guyana', flag: '🇬🇾', code: '+592' },
-    '53': { name: 'Cuba', flag: '🇨🇺', code: '+53' },
-    '52': { name: 'México', flag: '🇲🇽', code: '+52' },
-    '1': { name: 'EE.UU./Canadá', flag: '🇺🇸', code: '+1' },
-    '34': { name: 'España', flag: '🇪🇸', code: '+34' },
-  };
-
-  const country = countryMap[code];
-  if (country) {
-    this.phoneCountry = country.name;
-    this.phoneFlag = country.flag;
-    this.phoneCode = country.code;
-  } else {
-    this.phoneCountry = 'País desconocido';
-    this.phoneFlag = '🌍';
-    this.phoneCode = '+??';
-  }
-}
-
-
-private limpiarEspaciosDeDiasAnteriores0(): void {
-  const spaces = this.autolavadoService.spacesSubject.value;
-  const clients = this.autolavadoService.clientsSubject.value;
-
-  const hoyInicio = new Date();
-  hoyInicio.setHours(0, 0, 0, 0);
-  const hoyTimestamp = hoyInicio.getTime();
-
-  let necesitaLiberar = false;
-
-  Object.values(spaces).forEach(space => {
-    if (space.occupied && space.startTime) {
-      if (space.startTime < hoyTimestamp) {
-        console.log(`Espacio ${space.key} ocupado desde día anterior (${new Date(space.startTime).toLocaleDateString()}) → liberando`);
-
-        // Liberar localmente
-        space.occupied = false;
-        space.clientId = null;
-        space.startTime = null;
-        space.hold = false;
-        space.client = null;
-
-        // Limpiar cliente local si existe
-        if (space.clientId) {
-          delete clients[space.clientId];
-        }
-
-        necesitaLiberar = true;
-      }
-    }
-  });
-
-  if (necesitaLiberar) {
-    console.log('Espacios de días anteriores detectados → actualizando local y backend');
-
-    // Actualizar subjects
-    this.autolavadoService.spacesSubject.next({ ...spaces });
-    this.autolavadoService.clientsSubject.next({ ...clients });
-    this.autolavadoService.saveAll();
-
-    // Liberar en backend (tu método ya limpia clientes también)
-    this.autolavadoService.resetData().subscribe({
-      next: () => {
-        console.log('Backend sincronizado: espacios liberados');
-        this.filterSpaces();
-        this.cdr.detectChanges();
-      },
-      error: (err) => console.warn('Error sincronizando backend', err)
-    });
-
-    this.filterSpaces();
-    this.cdr.detectChanges();
-  } else {
-    console.log('Todos los espacios ocupados son de hoy → nada que limpiar');
-  }
-}
 
 private limpiarEspaciosDeDiasAnteriores(): void {
   const hoyInicio = new Date();
@@ -1576,90 +1252,7 @@ private limpiarEspaciosDeDiasAnteriores(): void {
 }
 
 
-private loadDataFromBackend01(): void {
-  forkJoin({
-    subsuelos: this.autolavadoService.loadSubsuelosFromBackend(),
-    spaces: this.autolavadoService.loadSpacesFromBackend(),
-    clients: this.autolavadoService.loadClientsFromBackend()  // ← NUEVO
-  }).subscribe({
-    next: ({ subsuelos, spaces, clients }) => {
-      console.log('Datos cargados desde backend como respaldo');
 
-      // Convertir spaces a mapa
-      const spacesObj: { [key: string]: Space } = {};
-      spaces.forEach(s => spacesObj[s.key] = s);
-
-      // Convertir clients a mapa por ID real
-      const clientsMap: { [key: string]: Client } = {};
-      clients.forEach(c => clientsMap[c.id.toString()] = c);
-
-      // ACTUALIZAR TODOS LOS SUBJECTS DEL SERVICIO
-      this.autolavadoService.subsuelosSubject.next(subsuelos);
-      this.autolavadoService.spacesSubject.next(spacesObj);
-      this.autolavadoService.clientsSubject.next(clientsMap);  // ← NUEVO
-
-      // Guardar todo en localStorage (sobrescribe lo viejo)
-      this.autolavadoService.saveAll();
-
-      // Establecer subsuelo actual
-      if (subsuelos.length > 0) {
-        this.autolavadoService.currentSubIdSubject.next(subsuelos[0].id);
-      }
-
-      console.log('Datos sincronizados desde backend → localStorage actualizado');
-    },
-    error: (err) => {
-      console.error('Error cargando datos desde backend', err);
-      alert('No hay conexión. Usando datos locales si existen...');
-      // Si falla, el servicio ya cargó lo que había en localStorage
-    }
-  });
-}
-
-
-private loadDataFromBackend0(): void {
-  forkJoin({
-    subsuelos: this.autolavadoService.loadSubsuelosFromBackend(),
-    spaces: this.autolavadoService.loadSpacesFromBackend(),
-    clients: this.autolavadoService.loadClientsFromBackend()  // ← Agrega esto
-  }).subscribe({
-    next: ({ subsuelos, spaces, clients }) => {
-      console.log('Datos cargados desde backend como respaldo');
-
-      // Convertir spaces a mapa
-      const spacesObj: { [key: string]: Space } = {};
-      spaces.forEach(s => spacesObj[s.key] = s);
-
-      // Convertir clients a mapa + CONVERTIR entryTimestamp a number
-      const clientsMap: { [key: string]: Client } = {};
-      clients.forEach(c => {
-        if (c.entryTimestamp) {
-          c.entryTimestamp = new Date(c.entryTimestamp).getTime();  // ← AQUÍ VA EL FRAGMENTO
-        }
-        clientsMap[c.id.toString()] = c;
-      });
-
-      // ACTUALIZAR LOS BEHAVIOR SUBJECTS DEL SERVICIO
-      this.autolavadoService.subsuelosSubject.next(subsuelos);
-      this.autolavadoService.spacesSubject.next(spacesObj);
-      this.autolavadoService.clientsSubject.next(clientsMap);  // ← Con entryTimestamp ya convertido
-
-      // Guardar en localStorage para próxima vez
-      this.autolavadoService.saveAll();
-
-      // Establecer subsuelo actual
-      if (subsuelos.length > 0) {
-        this.autolavadoService.currentSubIdSubject.next(subsuelos[0].id);
-      }
-
-      console.log('Datos sincronizados desde backend → localStorage actualizado');
-    },
-    error: (err) => {
-      console.error('Error cargando datos desde backend', err);
-      alert('No hay conexión. Usando datos locales si existen...');
-    }
-  });
-}
 
 private loadDataFromBackend(): void {
   forkJoin({
@@ -1715,13 +1308,19 @@ private loadDataFromBackend(): void {
 
 
 
-openVehicleAside0(): void {
-  this.showVehicleAside = true;
-  document.body.classList.add('vehicle-aside-open');
-  this.vehicleFilter = ''; // Limpiar filtro
-}
+
+
+
+
 
 openVehicleAside(): void {
+  // Si ya tiene 4 vehículos, mostrar error y no abrir
+  const total = this.clientVehiclesList?.length || 0;
+  if (total >= 4) {
+    alert('Solo se permiten hasta 4 vehículos por cliente.');
+    return;
+  }
+
   // 1. Cerrar el modal de reserva si está abierto
   const clientModalElement = document.getElementById('clientModal');
   if (clientModalElement) {
@@ -1737,16 +1336,9 @@ openVehicleAside(): void {
   this.vehicleFilter = '';
 }
 
-// Cierra el aside
-closeVehicleAside0(): void {
-  this.showVehicleAside = false;
 
-  // 3. Volver a abrir el modal de reserva si estaba abierto antes
-  if (this.clientModalInstance) {
-    this.clientModalInstance.show();
-    console.log('Modal de reserva reabierto después de cerrar aside');
-  }
-}
+
+
 
 closeVehicleAside(): void {
   this.showVehicleAside = false;
@@ -1876,6 +1468,8 @@ private matchesClientIdentity(client: Client, identity: { dni: string; phone: st
   return false;
 }
 
+
+
 private getVisitsForCurrentClientThisMonth(): Client[] {
   const identity = this.getCurrentClientIdentity();
   if (!identity.dni && !identity.phone && !identity.name) return [];
@@ -1887,11 +1481,17 @@ private getVisitsForCurrentClientThisMonth(): Client[] {
   return (this.allClients || [])
     .filter(client => this.matchesClientIdentity(client, identity))
     .filter(client => {
-      const ts = this.toTimestamp(client.entryTimestamp);
+      const ts = this.getVisitTimestamp(client); // <-- entry o exit
       return ts !== null && ts >= monthStart && ts < nextMonthStart;
     })
-    .sort((a, b) => (this.toTimestamp(b.entryTimestamp) || 0) - (this.toTimestamp(a.entryTimestamp) || 0));
+    .sort((a, b) => (this.getVisitTimestamp(b) || 0) - (this.getVisitTimestamp(a) || 0));
 }
+
+public getVisitTimestamp(client: Client): number | null {
+  return this.toTimestamp(client.entryTimestamp) ?? this.toTimestamp(client.exitTimestamp);
+}
+
+
 
 get frequentClientMonthlyVisitsCount(): number {
   return this.getVisitsForCurrentClientThisMonth().length;
@@ -1901,12 +1501,44 @@ get showFrequentClientButton(): boolean {
   return this.frequentClientMonthlyVisitsCount > 3;
 }
 
-openFrequentClientModal(): void {
+openFrequentClientModal0(): void {
   const visits = this.getVisitsForCurrentClientThisMonth();
   if (visits.length <= 3) return;
   this.frequentClientVisitsSnapshot = visits;
   this.showFrequentClientModal = true;
 }
+
+openFrequentClientModal(): void {
+  this.autolavadoService.getAllClientsFromBackend().subscribe({
+    next: (clients) => {
+      this.allClients = clients || [];
+      const visits = this.getVisitsForCurrentClientThisMonth();
+      this.frequentClientVisitsSnapshot = visits;
+      this.showFrequentClientModal = true;
+
+      console.log('[Frecuente] visitas del mes:', visits.length);
+      console.table(
+        visits.map(v => ({
+          id: v.id,
+          dni: v.dni,
+          name: v.name,
+          entryTimestamp: v.entryTimestamp,
+          exitTimestamp: v.exitTimestamp,
+          vehicle: v.vehicle,
+          plate: v.plate,
+          spaceKey: v.spaceKey
+        }))
+      );
+    },
+    error: (err) => {
+      console.error('Error cargando clientes para modal frecuente', err);
+      const visits = this.getVisitsForCurrentClientThisMonth();
+      this.frequentClientVisitsSnapshot = visits;
+      this.showFrequentClientModal = true;
+    }
+  });
+}
+
 
 closeFrequentClientModal(): void {
   this.showFrequentClientModal = false;
@@ -1933,7 +1565,7 @@ private getCurrentClientVehiclesKey(): string {
   return `temp:${Date.now()}-${this.selectedSpaceKey || 'unknown'}-${random}`;
 }
 
-private persistCurrentClientVehicles(): void {
+private persistCurrentClientVehicles0(): void {
   const key = this.getCurrentClientVehiclesKey();
   if (this.clientVehiclesList.length === 0) {
     delete this.clientVehiclesStore[key];
@@ -1942,7 +1574,68 @@ private persistCurrentClientVehicles(): void {
   this.clientVehiclesStore[key] = this.clientVehiclesList.map(v => ({ ...v }));
 }
 
-openClientVehiclesModal(): void {
+private persistCurrentClientVehicles(): void {
+  const key = this.activeClientVehiclesKey || this.getCurrentClientVehiclesKey();
+
+  if (this.clientVehiclesList.length === 0) {
+    delete this.clientVehiclesStore[key];
+    return;
+  }
+  this.clientVehiclesStore[key] = this.clientVehiclesList.map(v => ({ ...v }));
+}
+
+
+
+private normalizeVehicleModel(model: string): string {
+  return (model || '').trim().toLowerCase();
+}
+
+/*
+private upsertClientVehicleItem(item: ClientVehicleItem): void {
+  const key = this.getCurrentClientVehiclesKey();
+  const list = (this.clientVehiclesStore[key] || []).map(v => ({ ...v }));
+
+  const idx = list.findIndex(v => this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(item.model));
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], plate: item.plate || '', notes: item.notes || '' };
+  } else {
+    list.push({ ...item });
+  }
+
+  this.clientVehiclesStore[key] = list;
+  this.clientVehiclesList = list.map(v => ({ ...v }));
+}*/
+
+/*
+private upsertClientVehicleItem(item: ClientVehicleItem): void {
+  const key = this.getCurrentClientVehiclesKey();
+  const list = (this.clientVehiclesStore[key] || []).map(v => ({ ...v }));
+
+  const idx = list.findIndex(
+    v => this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(item.model)
+  );
+
+  if (idx >= 0) {
+    list[idx] = {
+      ...list[idx],
+      category: item.category || list[idx].category || '',
+      price: Number(item.price ?? list[idx].price ?? 0)
+    };
+  } else {
+    list.push({
+      model: item.model,
+      category: item.category || '',
+      price: Number(item.price ?? 0)
+    });
+  }
+
+  this.clientVehiclesStore[key] = list;
+  this.clientVehiclesList = list.map(v => ({ ...v }));
+  localStorage.setItem('clientVehiclesStore', JSON.stringify(this.clientVehiclesStore));
+}*/
+
+
+/*openClientVehiclesModal0(): void {
   const key = this.getCurrentClientVehiclesKey();
   const stored = this.clientVehiclesStore[key] || [];
   this.clientVehiclesList = stored.map(v => ({ ...v }));
@@ -1963,11 +1656,204 @@ openClientVehiclesModal(): void {
   this.showClientVehiclesModal = true;
 }
 
+openClientVehiclesModal(): void {
+  const key = this.getCurrentClientVehiclesKey();
+  const stored = this.clientVehiclesStore[key] || [];
+  this.clientVehiclesList = stored.map(v => ({ ...v }));
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+
+  const currentModel = (this.clientForm.get('vehicle')?.value || '').toString().trim();
+  const currentPlate = (this.clientForm.get('plate')?.value || '').toString().trim();
+  const currentNotes = (this.clientForm.get('notes')?.value || '').toString().trim();
+
+  if (currentModel) {
+    const existingIndex = this.clientVehiclesList.findIndex(v =>
+      this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(currentModel)
+    );
+
+    if (existingIndex === -1 && this.clientVehiclesList.length < 4) {
+      this.clientVehiclesList.push({
+        model: currentModel,
+        plate: currentPlate,
+        notes: currentNotes
+      });
+    } else if (existingIndex >= 0) {
+      // Si ya existe pero está vacío, rellenar con datos actuales
+      const existing = this.clientVehiclesList[existingIndex];
+      if (!existing.plate && currentPlate) existing.plate = currentPlate;
+      if (!existing.notes && currentNotes) existing.notes = currentNotes;
+    }
+    this.persistCurrentClientVehicles();
+  }
+
+  this.showClientVehiclesModal = true;
+}*/
+
+/*openClientVehiclesModal(): void {
+
+
+  const key = this.getCurrentClientVehiclesKey();
+  const stored = this.clientVehiclesStore[key] || [];
+  this.clientVehiclesList = stored.map(v => ({ ...v }));
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+
+if (this.clientVehiclesList.length === 0 && this.selectedClient?.clientVehicles?.length) {
+  this.clientVehiclesList = this.selectedClient.clientVehicles.map(cv => ({
+    model: cv.vehicleType?.model || '',
+    plate: cv.plate || '',
+    notes: cv.notes || ''
+  }));
+  this.persistCurrentClientVehicles();
+}
+
+
+  const currentModel = (this.clientForm.get('vehicle')?.value || '').toString().trim();
+  const selected = this.vehicles.find(v => v.model.toLowerCase() === currentModel.toLowerCase());
+
+  if (selected) {
+    const exists = this.clientVehiclesList.some(
+      v => v.model.toLowerCase() === selected.model.toLowerCase()
+    );
+    if (!exists && this.clientVehiclesList.length < 4) {
+      this.clientVehiclesList.push({
+        model: selected.model,
+        plate: selected.category,
+        notes: selected.price
+      });
+      this.persistCurrentClientVehicles();
+    }
+  }
+
+  this.showClientVehiclesModal = true;
+}*/
+
+openClientVehiclesModal0(): void {
+  if (!this.activeClientVehiclesKey) {
+    this.activeClientVehiclesKey = this.getCurrentClientVehiclesKey();
+  }
+
+  const key = this.activeClientVehiclesKey;
+
+  // Solo cargar del store si la lista actual está vacía
+  if (this.clientVehiclesList.length === 0) {
+    const stored = this.clientVehiclesStore[key] || [];
+    this.clientVehiclesList = stored.map(v => ({ ...v }));
+  }
+
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+
+  if (this.clientVehiclesList.length === 0 && this.selectedClient?.clientVehicles?.length) {
+    this.clientVehiclesList = this.selectedClient.clientVehicles.map(cv => ({
+      model: cv.vehicleType?.model || '',
+      plate: cv.plate || '',
+      notes: cv.notes || ''
+    }));
+    this.persistCurrentClientVehicles();
+  }
+
+  const currentModel = (this.clientForm.get('vehicle')?.value || '').toString().trim();
+  const currentPlate = (this.clientForm.get('plate')?.value || '').toString().trim();
+  const currentNotes = (this.clientForm.get('notes')?.value || '').toString().trim();
+
+  if (currentModel) {
+    const exists = this.clientVehiclesList.some(
+      v => this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(currentModel)
+    );
+
+    if (!exists && this.clientVehiclesList.length < 4) {
+      this.clientVehiclesList.push({
+        model: currentModel,
+        plate: currentPlate,
+        notes: currentNotes
+      });
+      this.persistCurrentClientVehicles();
+    }
+  }
+
+  this.showClientVehiclesModal = true;
+}
+
+
+openClientVehiclesModal(): void {
+  const dni = (this.clientForm.get('dni')?.value || '').toString().trim();
+  if (!dni) {
+    alert('Ingresa DNI antes de abrir el modal de vehículos.');
+    return;
+  }
+
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+  this.clientVehiclesList = [];
+
+  this.autolavadoService.getClientReservationsByDni(dni).subscribe({
+    next: (reservations) => {
+      // Tomamos el último cliente (más reciente)
+      const last = reservations?.[0];
+
+      if (last?.clientVehicles?.length) {
+        this.clientVehiclesList = last.clientVehicles.map(cv => ({
+          model: cv.vehicleType?.model || '',
+          plate: cv.plate || '',
+          notes: cv.notes || ''
+        }));
+      }
+
+      this.showClientVehiclesModal = true;
+    },
+    error: (err) => {
+      console.error('Error cargando vehículos desde backend', err);
+      alert('No se pudieron cargar los vehículos del cliente');
+    }
+  });
+}
+
+
+closeClientVehiclesModal0(): void {
+  this.showClientVehiclesModal = false;
+ // this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+   this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+}
+
 closeClientVehiclesModal(): void {
   this.showClientVehiclesModal = false;
   this.clientVehicleEditor = { model: '', plate: '', notes: '' };
   this.editingClientVehicleIndex = null;
+  this.activeClientVehiclesKey = null; // liberar la clave
 }
+
+
+
+/*
+saveClientVehicleItem(): void {
+  const model = (this.clientVehicleEditor.model || '').trim();
+  const category = (this.clientVehicleEditor.category || '').trim();
+  const price = Number(this.clientVehicleEditor.price || 0);
+
+  if (!model || !category || !price) {
+    alert('Debes completar modelo, categoría y precio.');
+    return;
+  }
+
+  const payload: ClientVehicleItem = { model, plate, notes };
+
+  if (this.editingClientVehicleIndex !== null) {
+    this.clientVehiclesList[this.editingClientVehicleIndex] = payload;
+  } else {
+    if (this.clientVehiclesList.length >= 4) {
+      alert('Solo se permiten hasta 4 vehículos por cliente.');
+      return;
+    }
+    this.clientVehiclesList.push(payload);
+  }
+
+  this.persistCurrentClientVehicles();
+  this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+  this.editingClientVehicleIndex = null;
+}*/
 
 saveClientVehicleItem0(): void {
   const model = (this.clientVehicleEditor.model || '').trim();
@@ -1983,6 +1869,8 @@ saveClientVehicleItem0(): void {
   };
 
   if (this.editingClientVehicleIndex !== null) {
+    const originalModel = this.clientVehiclesList[this.editingClientVehicleIndex].model;
+    payload.model = originalModel;
     this.clientVehiclesList[this.editingClientVehicleIndex] = payload;
   } else {
     if (this.clientVehiclesList.length >= 4) {
@@ -2011,24 +1899,38 @@ saveClientVehicleItem(): void {
   };
 
   if (this.editingClientVehicleIndex !== null) {
+    const originalModel = this.clientVehiclesList[this.editingClientVehicleIndex].model;
+    payload.model = originalModel; // no permitir cambiar modelo al editar
     this.clientVehiclesList[this.editingClientVehicleIndex] = payload;
   } else {
     if (this.clientVehiclesList.length >= 4) {
       alert('Solo se permiten hasta 4 vehículos por cliente.');
       return;
     }
-    this.clientVehiclesList.push(payload);
+
+    const exists = this.clientVehiclesList.some(v =>
+      this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(payload.model)
+    );
+
+    if (exists) {
+      // Si ya existe, solo actualiza plate/notes
+      const idx = this.clientVehiclesList.findIndex(v =>
+        this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(payload.model)
+      );
+      if (idx >= 0) {
+        this.clientVehiclesList[idx] = payload;
+      }
+    } else {
+      this.clientVehiclesList.push(payload);
+    }
   }
 
-  // Persistir en el store
-  const key = this.getCurrentClientVehiclesKey();
-  this.clientVehiclesStore[key] = this.clientVehiclesList.map(v => ({ ...v }));
-  console.log(`Vehículos actualizados en store para clave ${key}`);
-
-  // Resetear editor
+  this.persistCurrentClientVehicles();
   this.clientVehicleEditor = { model: '', plate: '', notes: '' };
   this.editingClientVehicleIndex = null;
 }
+
+
 
 editClientVehicleItem(index: number): void {
   const item = this.clientVehiclesList[index];
@@ -2037,11 +1939,28 @@ editClientVehicleItem(index: number): void {
   this.editingClientVehicleIndex = index;
 }
 
+deleteClientVehicleItem0(index: number): void {
+  const item = this.clientVehiclesList[index];
+  if (!item) return;
+
+  if (!confirm(`¿Eliminar el vehículo "${item.model}"?`)) return;
+  this.clientVehiclesList.splice(index, 1);
+  this.persistCurrentClientVehicles();
+
+  if (this.editingClientVehicleIndex === index) {
+    //this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+    this.clientVehicleEditor = { model: '', plate: '', notes: '' };
+
+    this.editingClientVehicleIndex = null;
+  }
+}
+
 deleteClientVehicleItem(index: number): void {
   const item = this.clientVehiclesList[index];
   if (!item) return;
 
   if (!confirm(`¿Eliminar el vehículo "${item.model}"?`)) return;
+
   this.clientVehiclesList.splice(index, 1);
   this.persistCurrentClientVehicles();
 
@@ -2051,36 +1970,27 @@ deleteClientVehicleItem(index: number): void {
   }
 }
 
-selectClientVehicleItem0(item: ClientVehicleItem): void {
-  this.clientForm.patchValue({
-    vehicle: item.model || '',
-    plate: item.plate || this.clientForm.value.plate || ''
-  });
-
-  const selectedVehicleType = this.vehicles.find(v => v.model === item.model);
-  if (selectedVehicleType) {
-    this.clientForm.patchValue({ price: selectedVehicleType.price });
-  }
-
-  this.closeClientVehiclesModal();
-}
-
 selectClientVehicleItem(item: ClientVehicleItem): void {
   this.clientForm.patchValue({
     vehicle: item.model || '',
-    plate: item.plate || this.clientForm.value.plate || ''
+    plate: item.plate || '',
+    notes: item.notes || ''
   });
 
-  // Intentar cargar precio desde la lista de tipos de vehículos
-  const selectedVehicleType = this.vehicles.find(v => v.model.toLowerCase() === item.model.toLowerCase());
+  const selectedVehicleType = this.vehicles.find(
+    v => v.model.toLowerCase() === (item.model || '').toLowerCase()
+  );
   if (selectedVehicleType) {
     this.clientForm.patchValue({ price: selectedVehicleType.price });
   }
 
   this.closeClientVehiclesModal();
-
   this.toastService.showSuccess(`Vehículo cargado: ${item.model}`);
 }
+
+
+
+
 
 filterClientsAdmin(): void {
   if (!this.searchTermClients.trim()) {
@@ -2104,83 +2014,7 @@ clearSearchClients(): void {
   this.filteredClientsAdmin = this.allClients;
 }
 
-exportClientsDbToExcel0(): void {
-  const confirmed = confirm('¿Deseas exportar la base de datos de clientes a Excel?');
-  if (!confirmed) return;
 
-  const rows = this.allClients || [];
-  const fileName = `base_datos_clientes_${new Date().toISOString().slice(0, 10)}.xls`;
-
-  const escapeHtml = (value: any): string =>
-    String(value ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-
-  const tableRows = rows.map((client) => `
-    <tr>
-      <td>${escapeHtml(client.id)}</td>
-      <td>${escapeHtml(client.code)}</td>
-      <td>${escapeHtml(client.name)}</td>
-      <td>${escapeHtml(client.dni)}</td>
-      <td>${escapeHtml(client.phoneIntl)}</td>
-      <td>${escapeHtml(client.vehicle)}</td>
-      <td>${escapeHtml(client.plate)}</td>
-      <td>${escapeHtml(client.category)}</td>
-      <td>${escapeHtml(client.price)}</td>
-      <td>${escapeHtml(client.paymentMethod)}</td>
-      <td>${escapeHtml(client.spaceKey)}</td>
-      <td>${escapeHtml(client.entryTimestamp)}</td>
-      <td>${escapeHtml(client.exitTimestamp)}</td>
-    </tr>
-  `).join('');
-
-  const htmlExcel = `
-    <html>
-      <head>
-        <meta charset="utf-8" />
-      </head>
-      <body>
-        <table border="1">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Código</th>
-              <th>Nombre</th>
-              <th>DNI</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Matrícula</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Método Pago</th>
-              <th>Espacio</th>
-              <th>Ingreso</th>
-              <th>Salida</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows}
-          </tbody>
-        </table>
-      </body>
-    </html>
-  `;
-
-  const blob = new Blob([htmlExcel], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-
-  this.toastService.showSuccess('Base de datos exportada correctamente');
-}
 
 exportClientsDbToExcel(): void {
   const confirmed = confirm('¿Deseas exportar la base de datos de clientes a Excel?');
@@ -2217,18 +2051,7 @@ exportClientsDbToExcel(): void {
   this.toastService.showSuccess('Base de datos exportada correctamente');
 }
 
-loadAllClientsFromBackend0(): void {
-  this.autolavadoService.getAllClientsFromBackend().subscribe({
-    next: (clients) => {
-      this.allClients = clients;
-      console.log('Todos los clientes cargados desde backend:', clients);
-    },
-    error: (err) => {
-      console.error('Error cargando clientes desde backend', err);
-      alert('No se pudieron cargar los clientes');
-    }
-  });
-}
+
 
 loadAllClientsFromBackend(): void {
   this.autolavadoService.getAllClientsFromBackend().subscribe({
@@ -2249,16 +2072,6 @@ getSpaceByKey(spaceKey: string | null): Space | undefined {
   return this.autolavadoService.spacesSubject.value[spaceKey];
 }
 
-formatDateOnly0(startTime: number | null): string {
-  if (!startTime) return '-';
-  const date = new Date(startTime);
-  return date.toLocaleDateString('es-AR', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  });
-}
 
 formatDateOnly(timestamp: number | null): string {
   if (!timestamp) return '-'; // Si ninguno existe → -
@@ -2537,7 +2350,7 @@ private updateOccupiedModal(client: Client | null, space: Space): void {
 
 
 
-saveClient0(): void {
+/*saveClient0(): void {
   if (this.clientForm.invalid) {
     alert('Por favor completa todos los campos obligatorios.');
     return;
@@ -2650,7 +2463,7 @@ saveClient0(): void {
   }
 }
 
-saveClient(): void {
+saveClient00(): void {
 
 
     if (this.clientForm.invalid || !this.phoneIsValid) {
@@ -2758,9 +2571,12 @@ const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';// 27783 (opcional)
   }
 }
 
-saveClient1(): void {
-  if (this.clientForm.invalid) {
-    alert('Por favor completa todos los campos obligatorios.');
+saveClient001(): void {
+  if (this.clientForm.invalid || !this.phoneIsValid) {
+    alert('Por favor, completa todos los campos obligatorios correctamente.\n\nVerifica que el teléfono sea válido.');
+    Object.keys(this.clientForm.controls).forEach(key => {
+      this.clientForm.get(key)?.markAsTouched();
+    });
     return;
   }
 
@@ -2771,15 +2587,17 @@ saveClient1(): void {
     const category = selectedVehicle?.category || 'AUTO';
     const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
 
-    const fullPhone = this.iti.getNumber(); // Número completo con + y código correcto
-    const localPhone = this.iti.getNumber().replace('+' + this.iti.getSelectedCountryData().dialCode, ''); // Número local
+    const phoneIntl = this.clientForm.value.phone || '';
+    const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';
 
     const localClientData = {
       ...this.clientForm.value,
       category,
       price,
-      phoneIntl: fullPhone,
-      phoneRaw: localPhone
+      phoneIntl,
+      phoneRaw,
+      entryTimestamp: Date.now(),
+      exitTimestamp: null,
     };
 
     // GUARDAR EN LOCAL (genera tempId)
@@ -2790,6 +2608,19 @@ saveClient1(): void {
     this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
 
     this.hasCopiedMessage = false;
+
+    // NUEVO: construir clientVehicles (plate/notes por vehículo)
+    const clientVehicles = this.clientVehiclesList
+      .map(item => {
+        const vt = this.vehicles.find(v => v.model.toLowerCase() === item.model.toLowerCase());
+        if (!vt) return null;
+        return {
+          vehicleType: { id: vt.id },
+          plate: item.plate || '',
+          notes: item.notes || ''
+        };
+      })
+      .filter(Boolean);
 
     // DATOS PARA BACKEND
     const payload = {
@@ -2804,14 +2635,14 @@ saveClient1(): void {
       notes: localClient.notes,
       category: localClient.category,
       price: localClient.price,
-      vehicleType: selectedVehicle ? { id: selectedVehicle.id } : null
+      clientVehicles
     };
 
     console.log('Datos enviados al backend:', payload);
 
     this.autolavadoService.saveClientToBackend({
       spaceKey: this.selectedSpaceKey,
-      payload: payload
+      payload
     }).subscribe({
       next: (serverClient) => {
         console.log('Cliente reservado/actualizado en backend:', serverClient);
@@ -2821,7 +2652,6 @@ saveClient1(): void {
 
         const clientsMap = this.autolavadoService.clientsSubject.value;
 
-        // Reemplazar tempId por ID real
         if (clientsMap[tempId]) {
           const clientToMove = { ...clientsMap[tempId], id: realId };
           delete clientsMap[tempId];
@@ -2831,14 +2661,11 @@ saveClient1(): void {
           console.log(`Cliente movido de tempId ${tempId} a realId ${realId}`);
         }
 
-        // Actualizar espacio con ID real
         space.clientId = realId;
         this.autolavadoService.spacesSubject.next({ ...this.spaces });
 
-        // Guardar en localStorage
         this.autolavadoService.saveAll();
 
-        // Actualizar vista
         this.filterSpaces();
         this.cdr.detectChanges();
 
@@ -2853,7 +2680,474 @@ saveClient1(): void {
     console.error('Error:', error);
     alert('Error al guardar cliente: ' + error);
   }
+}*/
+
+
+saveClient0(): void {
+  if (this.clientForm.invalid || !this.phoneIsValid) {
+    alert('Por favor, completa todos los campos obligatorios correctamente.\n\nVerifica que el teléfono sea válido.');
+    Object.keys(this.clientForm.controls).forEach(key => {
+      this.clientForm.get(key)?.markAsTouched();
+    });
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    const phoneIntl = this.clientForm.value.phone || '';
+    const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';
+
+    const dni = (this.clientForm.value.dni || '').toString().trim();
+
+const conflict = this.findActiveVehicleReservationConflict(dni, selectedVehicleModel);
+if (conflict) {
+  alert(
+    `No se puede reservar el mismo vehículo en dos espacios al mismo tiempo.\n\n` +
+    `Vehículo: ${selectedVehicleModel}\n` +
+    `DNI: ${dni}\n` +
+    `Reserva activa en: ${conflict.spaceKey || 'espacio desconocido'}`
+  );
+  return;
 }
+
+
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price,
+      phoneIntl,
+      phoneRaw,
+      entryTimestamp: Date.now(),
+      exitTimestamp: null,
+    };
+
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+    this.hasCopiedMessage = false;
+
+    // NUEVO: lista de vehicleTypes
+    const vehicleTypes = this.resolveVehicleTypesFromUI();
+
+    const payload = {
+      id: this.existingClientId || null,
+      name: localClient.name,
+      dni: localClient.dni || '',
+      phoneRaw: localClient.phoneRaw,
+      phoneIntl: localClient.phoneIntl,
+      code: localClient.code,
+      vehicle: localClient.vehicle,
+      plate: localClient.plate,
+      notes: localClient.notes,
+      category: localClient.category,
+      price: localClient.price,
+      vehicleTypes: vehicleTypes.map(v => ({ id: v.id }))
+    };
+
+
+
+
+    console.log('Datos enviados al backend:', payload);
+
+    this.autolavadoService.saveClientToBackend({
+      spaceKey: this.selectedSpaceKey,
+      payload
+    }).subscribe({
+      next: (serverClient) => {
+        console.log('Cliente reservado/actualizado en backend:', serverClient);
+
+        const tempId = localClient.id;
+        const realId = serverClient.id.toString();
+
+        const clientsMap = this.autolavadoService.clientsSubject.value;
+        if (clientsMap[tempId]) {
+          const clientToMove = { ...clientsMap[tempId], id: realId };
+          delete clientsMap[tempId];
+          clientsMap[realId] = clientToMove;
+          this.autolavadoService.clientsSubject.next({ ...clientsMap });
+        }
+
+        space.clientId = realId;
+        this.autolavadoService.spacesSubject.next({ ...this.spaces });
+        this.autolavadoService.saveAll();
+
+        this.filterSpaces();
+        this.cdr.detectChanges();
+
+        alert('Cliente guardado exitosamente!');
+        this.openWhatsApp();
+      },
+      error: (err) => {
+        console.warn('Error en backend (funciona offline)', err);
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error:', error);
+    alert(error?.message || 'Error al guardar cliente');
+  }
+}
+
+saveClient10(): void {
+  if (this.clientForm.invalid || !this.phoneIsValid) {
+    alert('Por favor, completa todos los campos obligatorios correctamente.\n\nVerifica que el teléfono sea válido.');
+    Object.keys(this.clientForm.controls).forEach(key => {
+      this.clientForm.get(key)?.markAsTouched();
+    });
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    const phoneIntl = this.clientForm.value.phone || '';
+    const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';
+
+    const dni = (this.clientForm.value.dni || '').toString().trim();
+
+    const conflict = this.findActiveVehicleReservationConflict(dni, selectedVehicleModel);
+    if (conflict) {
+      alert(
+        `No se puede reservar el mismo vehículo en dos espacios al mismo tiempo.\n\n` +
+        `Vehículo: ${selectedVehicleModel}\n` +
+        `DNI: ${dni}\n` +
+        `Reserva activa en: ${conflict.spaceKey || 'espacio desconocido'}`
+      );
+      return;
+    }
+
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price,
+      phoneIntl,
+      phoneRaw,
+      entryTimestamp: Date.now(),
+      exitTimestamp: null,
+    };
+
+
+
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+    this.hasCopiedMessage = false;
+
+     console.log('[clientVehiclesList]', this.clientVehiclesList);
+    // <-- construir clientVehicles para backend
+    const clientVehicles = this.clientVehiclesList
+      .map(item => {
+        const vt = this.vehicles.find(v => v.model.toLowerCase() === item.model.toLowerCase());
+        if (!vt) return null;
+        return {
+          vehicleType: { id: vt.id },
+          plate: item.plate || '',
+          notes: item.notes || ''
+        };
+      })
+      .filter(Boolean);
+
+      console.log('[clientVehicles payload]', clientVehicles);
+
+    const payload = {
+      id: this.existingClientId || null,
+      name: localClient.name,
+      dni: localClient.dni || '',
+      phoneRaw: localClient.phoneRaw,
+      phoneIntl: localClient.phoneIntl,
+      code: localClient.code,
+      vehicle: localClient.vehicle,
+      plate: localClient.plate,
+      notes: localClient.notes,
+      category: localClient.category,
+      price: localClient.price,
+      clientVehicles
+    };
+
+    console.log('Datos enviados al backend:', payload);
+
+    this.autolavadoService.saveClientToBackend({
+      spaceKey: this.selectedSpaceKey,
+      payload
+    }).subscribe({
+      next: (serverClient) => {
+        console.log('Cliente reservado/actualizado en backend:', serverClient);
+
+        const tempId = localClient.id;
+        const realId = serverClient.id.toString();
+
+        const clientsMap = this.autolavadoService.clientsSubject.value;
+        if (clientsMap[tempId]) {
+          const clientToMove = { ...clientsMap[tempId], id: realId };
+          delete clientsMap[tempId];
+          clientsMap[realId] = clientToMove;
+          this.autolavadoService.clientsSubject.next({ ...clientsMap });
+        }
+
+        space.clientId = realId;
+        this.autolavadoService.spacesSubject.next({ ...this.spaces });
+        this.autolavadoService.saveAll();
+
+        this.filterSpaces();
+        this.cdr.detectChanges();
+
+        alert('Cliente guardado exitosamente!');
+        this.openWhatsApp();
+      },
+      error: (err) => {
+        console.warn('Error en backend (funciona offline)', err);
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error:', error);
+    alert(error?.message || 'Error al guardar cliente');
+  }
+}
+
+saveClient(): void {
+  if (this.clientForm.invalid || !this.phoneIsValid) {
+    alert('Por favor, completa todos los campos obligatorios correctamente.\n\nVerifica que el teléfono sea válido.');
+    Object.keys(this.clientForm.controls).forEach(key => {
+      this.clientForm.get(key)?.markAsTouched();
+    });
+    return;
+  }
+
+  try {
+    const selectedVehicleModel = this.clientForm.value.vehicle;
+    const selectedVehicle = this.vehicles.find(v => v.model === selectedVehicleModel);
+
+    const category = selectedVehicle?.category || 'AUTO';
+    const price = this.clientForm.value.price || selectedVehicle?.price || 35000;
+
+    const phoneIntl = this.clientForm.value.phone || '';
+    const phoneRaw = phoneIntl.replace(/^\+\d+/, '') || '';
+    const dni = (this.clientForm.value.dni || '').toString().trim();
+
+    const conflict = this.findActiveVehicleReservationConflict(dni, selectedVehicleModel);
+    if (conflict) {
+      alert(
+        `No se puede reservar el mismo vehículo en dos espacios al mismo tiempo.\n\n` +
+        `Vehículo: ${selectedVehicleModel}\n` +
+        `DNI: ${dni}\n` +
+        `Reserva activa en: ${conflict.spaceKey || 'espacio desconocido'}`
+      );
+      return;
+    }
+
+    // ✅ Asegurar que el vehículo actual esté en la lista
+    const currentModel = (this.clientForm.get('vehicle')?.value || '').toString().trim();
+    const currentPlate = (this.clientForm.get('plate')?.value || '').toString().trim();
+    const currentNotes = (this.clientForm.get('notes')?.value || '').toString().trim();
+
+    if (currentModel) {
+      const exists = this.clientVehiclesList.some(
+        v => this.normalizeVehicleModel(v.model) === this.normalizeVehicleModel(currentModel)
+      );
+
+      if (!exists && this.clientVehiclesList.length < 4) {
+        this.clientVehiclesList.push({
+          model: currentModel,
+          plate: currentPlate,
+          notes: currentNotes
+        });
+      }
+    }
+
+    // ⚠️ validar limite en frontend
+    if (this.clientVehiclesList.length > 4) {
+      alert('Solo se permiten hasta 4 vehículos por cliente.');
+      return;
+    }
+
+    const localClientData = {
+      ...this.clientForm.value,
+      category,
+      price,
+      phoneIntl,
+      phoneRaw,
+      entryTimestamp: Date.now(),
+      exitTimestamp: null,
+    };
+
+    const localClient = this.autolavadoService.saveClient(localClientData, this.selectedSpaceKey);
+    const space = this.spaces[this.selectedSpaceKey];
+
+    this.whatsappMessage = this.autolavadoService.buildWhatsAppMessage(localClient, space);
+    this.whatsappLink = this.autolavadoService.buildWhatsAppLink(localClient, space);
+
+    // ✅ Armar clientVehicles para backend
+    const clientVehicles = this.clientVehiclesList
+      .map(item => {
+        const vt = this.vehicles.find(v => v.model.toLowerCase() === item.model.toLowerCase());
+        if (!vt) return null;
+        return {
+          vehicleType: { id: vt.id },
+          plate: item.plate || '',
+          notes: item.notes || ''
+        };
+      })
+      .filter(Boolean);
+
+    const payload = {
+      id: this.existingClientId || null,
+      name: localClient.name,
+      dni: localClient.dni || '',
+      phoneRaw: localClient.phoneRaw,
+      phoneIntl: localClient.phoneIntl,
+      code: localClient.code,
+      vehicle: localClient.vehicle,
+      plate: localClient.plate,
+      notes: localClient.notes,
+      category: localClient.category,
+      price: localClient.price,
+      clientVehicles
+    };
+
+    this.autolavadoService.saveClientToBackend({
+      spaceKey: this.selectedSpaceKey,
+      payload
+    }).subscribe({
+      next: (serverClient) => {
+        const tempId = localClient.id;
+        const realId = serverClient.id.toString();
+
+        const clientsMap = this.autolavadoService.clientsSubject.value;
+        if (clientsMap[tempId]) {
+          const clientToMove = { ...clientsMap[tempId], id: realId };
+          delete clientsMap[tempId];
+          clientsMap[realId] = clientToMove;
+          this.autolavadoService.clientsSubject.next({ ...clientsMap });
+        }
+
+        space.clientId = realId;
+        this.autolavadoService.spacesSubject.next({ ...this.spaces });
+        this.autolavadoService.saveAll();
+
+        this.filterSpaces();
+        this.cdr.detectChanges();
+
+        alert('Cliente guardado exitosamente!');
+        this.openWhatsApp();
+      },
+      error: (err) => {
+        console.warn('Error en backend (funciona offline)', err);
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error:', error);
+    alert(error?.message || 'Error al guardar cliente');
+  }
+}
+
+
+
+private normalizeText(value: any): string {
+  return (value || '').toString().trim().toLowerCase();
+}
+
+
+private getClientIdentityFromForm(): { dni: string; phone: string; name: string } {
+  const dni = (this.clientForm.get('dni')?.value || '').toString().trim();
+  const phone = (this.clientForm.get('phone')?.value || '').toString().replace(/\D/g, '');
+  const name = (this.clientForm.get('name')?.value || '').toString().trim().toLowerCase();
+  return { dni, phone, name };
+}
+
+private sameClientIdentity(a: Client, identity: { dni: string; phone: string; name: string }): boolean {
+  const aDni = (a.dni || '').toString().trim();
+  const aPhone = (a.phoneIntl || a.phoneRaw || '').toString().replace(/\D/g, '');
+  const aName = (a.name || '').toString().trim().toLowerCase();
+
+  if (identity.dni && aDni) return identity.dni === aDni;
+  if (identity.phone && aPhone) return identity.phone === aPhone;
+  if (identity.name && aName) return identity.name === aName;
+
+  return false;
+}
+
+private getReservationTs(client: Client): number {
+  const entry = this.toTimestamp(client.entryTimestamp);
+  const exit = this.toTimestamp(client.exitTimestamp);
+  return entry ?? exit ?? 0;
+}
+
+private findLastReservationForVehicle(model: string): Client | null {
+  const identity = this.getClientIdentityFromForm();
+  const targetModel = this.normalizeText(model);
+
+  if (!targetModel) return null;
+  if (!identity.dni && !identity.phone && !identity.name) return null;
+
+  const matches = (this.allClients || [])
+    .filter(c => this.sameClientIdentity(c, identity))
+    .filter(c => this.normalizeText(c.vehicle) === targetModel)
+    .sort((a, b) => this.getReservationTs(b) - this.getReservationTs(a));
+
+  return matches.length ? matches[0] : null;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+private findActiveVehicleReservationConflict(dni: string, vehicleModel: string): { clientId: any; spaceKey: string | null } | null {
+  const dniNorm = this.normalizeText(dni);
+  const vehicleNorm = this.normalizeText(vehicleModel);
+
+  if (!dniNorm || !vehicleNorm) return null;
+
+  for (const c of Object.values(this.clients || {})) {
+    const sameDni = this.normalizeText(c.dni) === dniNorm;
+    const sameVehicle = this.normalizeText(c.vehicle) === vehicleNorm;
+    if (!sameDni || !sameVehicle) continue;
+
+    // si estoy reutilizando el mismo registro, no lo tomo como conflicto
+    if (this.existingClientId && String(c.id) === String(this.existingClientId)) {
+      continue;
+    }
+
+    const isActiveByExit = c.exitTimestamp === null || c.exitTimestamp === undefined;
+    const isActiveBySpace = !!c.spaceKey && !!this.spaces[c.spaceKey]?.occupied;
+
+    if (isActiveByExit || isActiveBySpace) {
+      return {
+        clientId: c.id,
+        spaceKey: c.spaceKey || null
+      };
+    }
+  }
+
+  return null;
+}
+
+
 
 
 onVehicleSelected0(event: Event): void {
@@ -3069,23 +3363,7 @@ launchWhatsApp(): void {
   }
 }
 
-launchWhatsAppRelease0(): void {
-  if (!this.selectedClient || !this.whatsappMessageOccupied) return;
-  if (!this.hasCopiedMessageOccupied) return;
 
-  const phone = this.selectedClient.phoneIntl;
-  const message = this.whatsappMessageOccupied;
-  const encoded = encodeURIComponent(message);
-  const link = `whatsapp://send?phone=${phone}&text=${encoded}`;
-
-  window.open(link, '_blank');
-  const sentSpaceKey = this.selectedSpace?.key || this.selectedSpaceKey;
-  if (sentSpaceKey) {
-    this.sentReleaseWhatsappBySpace.add(sentSpaceKey);
-  }
-
-  this.hasCopiedMessageOccupied = false;
-}
 
 launchWhatsAppRelease(): void {
   if (!this.selectedClient || !this.whatsappMessageOccupied) return;
@@ -3207,31 +3485,7 @@ toggleOccupiedQR(): void {
 }
 
 
-  releaseSpace0(): void {
-    if (confirm(`¿Liberar espacio ${this.selectedSpaceKey}?`)) {
-      this.autolavadoService.releaseSpace(this.selectedSpaceKey);
-      this.hideModal('occupiedModal');
-    }
-  }
 
-  releaseSpace1(): void {
-  if (confirm(`¿Liberar espacio ${this.selectedSpace?.displayName || this.selectedSpaceKey}?`)) {
-    this.autolavadoService.releaseSpace(this.selectedSpaceKey).subscribe({
-      next: () => {
-        console.log('Espacio liberado y datos sincronizados');
-        this.filterSpaces();
-        this.cdr.detectChanges();
-        this.hideModal('occupiedModal');
-        alert('Espacio liberado correctamente');
-      },
-      error: (err) => {
-        console.warn('Error liberando espacio', err);
-        alert('Liberado localmente. Se sincronizará con conexión.');
-        this.hideModal('occupiedModal');
-      }
-    });
-  }
-}
 
 releaseSpace(): void {
   if (confirm(`¿Liberar espacio ${this.selectedSpace?.displayName || this.selectedSpaceKey}?`)) {
@@ -3295,25 +3549,7 @@ releaseSpace(): void {
   }
 }
 
-cerrarDia0(): void {
-  const hoy = new Date().toLocaleDateString('es-AR');
-  if (confirm(`¿Cerrar el día ${hoy}?\n\nEsto hará:\n• Liberar todos los espacios\n• Eliminar todos los clientes del día\n• Limpiar la base de datos\n\n¡No se podrá deshacer!`)) {
-    console.log('Cerrando día y limpiando todo...');
 
-    this.autolavadoService.resetData().subscribe({
-      next: () => {
-        console.log('Día cerrado: todo limpiado local y backend');
-        this.filterSpaces();
-        this.cdr.detectChanges();
-        alert(`Día ${hoy} cerrado correctamente.\nListo para mañana.`);
-      },
-      error: (err: any) => {
-        console.warn('Error cerrando día en backend', err);
-        alert('Cerrado localmente. Se sincronizará cuando haya conexión.');
-      }
-    });
-  }
-}
 
 openCerrarDiaModal(): void {
   const hoy = new Date().toLocaleDateString('es-AR');
@@ -3473,21 +3709,6 @@ confirmEditSpace(): void {
 }
 
 
-transferSpace0(): void {
-  if (confirm(`¿Transferir espacio ${this.selectedSpaceKey} a otro subsuelo?`)) {
-    const newSubsuelo = prompt('Ingresa el ID del subsuelo destino (ej. SUB2):', this.subsuelos[0]?.id || '');
-    if (newSubsuelo && newSubsuelo !== this.selectedSpace?.subsueloId) {
-      try {
-        this.autolavadoService.transferSpace(this.selectedSpaceKey, newSubsuelo);
-        this.filterSpaces();
-        this.cdr.detectChanges();
-        alert('Espacio transferido exitosamente!');
-      } catch (error) {
-        alert('Error al transferir espacio: ' + error);
-      }
-    }
-  }
-}
 
 transferSpace(): void {
   if (confirm(`¿Transferir espacio ${this.selectedSpaceKey} a otro subsuelo?`)) {
@@ -3518,12 +3739,7 @@ transferSpace(): void {
 }
 
 
-openWhatsAppModalOccupied0(): void {
-  if (this.selectedClient && this.selectedSpace) {
-    this.whatsappMessageOccupied = this.autolavadoService.buildWhatsAppMessage(this.selectedClient, this.selectedSpace);
-    this.showWhatsAppModalOccupied = true;
-  }
-}
+
 
 openWhatsAppModalOccupied(): void {
   if (this.selectedClient && this.selectedSpace) {
@@ -3585,6 +3801,33 @@ isReleaseMessageSentForSpace(space: Space): boolean {
 }
 
 
+
+
+
+
+private resolveVehicleTypesFromUI(): VehicleType[] {
+  const byModel = new Map<string, VehicleType>();
+  this.vehicles.forEach(v => byModel.set(v.model.toLowerCase(), v));
+
+  const result: VehicleType[] = [];
+
+  // Desde la lista del modal
+  this.clientVehiclesList.forEach(item => {
+    const vt = byModel.get((item.model || '').toLowerCase());
+    if (vt && !result.some(r => r.id === vt.id)) result.push(vt);
+  });
+
+  // Desde el selector actual
+  const selectedModel = (this.clientForm.value.vehicle || '').toString().trim();
+  const selected = byModel.get(selectedModel.toLowerCase());
+  if (selected && !result.some(r => r.id === selected.id)) result.push(selected);
+
+  if (result.length > 4) {
+    throw new Error('Solo se permiten hasta 4 vehículos por cliente.');
+  }
+
+  return result;
+}
 
 
 

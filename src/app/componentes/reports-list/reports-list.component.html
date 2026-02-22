@@ -3,6 +3,7 @@
     <h2 class="h4 mb-0">Lista de Reportes</h2>
     <button class="btn btn-outline-primary btn-sm" (click)="refreshReports()">Recargar</button>
   </div>
+
   <div class="card">
     <div class="card-body">
       <div class="table-responsive">
@@ -10,7 +11,11 @@
           <thead>
             <tr>
               <th>ID</th>
-              <th>Fecha</th>
+              <th>Tipo</th>
+              <th>Período</th>
+              <th>Fecha creación</th>
+              <th>Servicios</th>
+              <th>Total cobrado</th>
               <th>Total Espacios</th>
               <th>Ocupados</th>
               <th>Libres</th>
@@ -19,31 +24,43 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let report of reports">
-              <td>{{report.id}}</td>
-              <td>{{report.timestamp | date:'short'}}</td>
-              <td>{{report.totalSpaces}}</td>
-              <td><span class="badge bg-danger">{{report.occupiedSpaces}}</span></td>
-              <td><span class="badge bg-success">{{report.freeSpaces}}</span></td>
+            <tr *ngFor="let row of reportRows">
+              <td>{{ row.id }}</td>
+              <td>
+                <span class="badge" [ngClass]="row.periodTypeLabel === 'Mensual' ? 'bg-warning text-dark' : 'bg-info text-dark'">
+                  {{ row.periodTypeLabel }}
+                </span>
+              </td>
+              <td>{{ row.periodTitle }}</td>
+              <td>{{ row.timestamp | date:'short' }}</td>
+              <td><span class="badge bg-primary">{{ row.servicesCount }}</span></td>
+              <td><strong class="text-success">${{ row.totalCobrado | number:'1.0-0' }}</strong></td>
+              <td>{{ row.totalSpaces }}</td>
+              <td><span class="badge bg-danger">{{ row.occupiedSpaces }}</span></td>
+              <td><span class="badge bg-success">{{ row.freeSpaces }}</span></td>
               <td>
                 <div class="progress" style="height: 20px;">
-                  <div class="progress-bar"
-                       [ngClass]="report.occupancyRate < 50 ? 'bg-success' : report.occupancyRate < 80 ? 'bg-warning' : 'bg-danger'"
-                       [style.width.%]="report.occupancyRate">
-                    {{report.occupancyRate}}%
+                  <div
+                    class="progress-bar"
+                    [ngClass]="row.occupancyRate < 50 ? 'bg-success' : row.occupancyRate < 80 ? 'bg-warning' : 'bg-danger'"
+                    [style.width.%]="row.occupancyRate"
+                  >
+                    {{ row.occupancyRate }}%
                   </div>
                 </div>
               </td>
               <td>
-                <button class="btn btn-sm btn-outline-primary me-1" (click)="viewReport(report.id)">Ver</button>
-                <button class="btn btn-sm btn-outline-danger" (click)="deleteReport(report.id)">Eliminar</button>
+                <button class="btn btn-sm btn-outline-primary me-1" (click)="viewReport(row.id)">Ver</button>
+                <button class="btn btn-sm btn-outline-danger" (click)="deleteReport(row.id)">Eliminar</button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div *ngIf="reports.length === 0" class="text-center text-muted py-4">
-        No hay reportes disponibles. <button class="btn btn-sm btn-outline-primary" (click)="refreshReports()">Recargar</button>
+
+      <div *ngIf="reportRows.length === 0" class="text-center text-muted py-4">
+        No hay reportes disponibles.
+        <button class="btn btn-sm btn-outline-primary" (click)="refreshReports()">Recargar</button>
       </div>
     </div>
   </div>

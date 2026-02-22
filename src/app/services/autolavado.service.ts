@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, combineLatest, forkJoin, Observable, of } from 'rxjs';
 import { catchError, map, switchMap, tap } from 'rxjs/operators';
-import { Report, VehicleType } from '../models/autolavado.model';
+import { ClientVehicle, Report, VehicleType } from '../models/autolavado.model';
 
 // Interfaces
 export interface Subsuelo {
@@ -23,7 +23,7 @@ export interface Space {
 }
 
  export interface Client {
-  id: string;
+  id: any;
   code: string;
   name: string;
   dni?: string;
@@ -35,16 +35,23 @@ export interface Space {
   spaceKey: any;
   qrText: string;
   category?: string;  // Nueva propiedad opcional
-  price?: number;
-  vehicleType?: VehicleType | null;
+  price?: any;
+  //vehicleType?: VehicleType | null;
+ // vehicleTypes?: VehicleType[];
+  clientVehicles?: ClientVehicle[];
   paymentMethod?: string;  // ← NUEVO
   clover?: number | null;
   entryTimestamp?: any;
-  exitTimestamp?: number;
+  exitTimestamp?: any;
+  lastDayClosed?:any;
 }
 
 
-
+/*export interface ClientVehicle {
+  vehicleType: VehicleType;
+  plate?: string;
+  notes?: string;
+}*/
 
 
 export interface ClientData {
@@ -555,6 +562,17 @@ deleteClientFromBackend(clientId: number): Observable<any> {
 updateClientInBackend(clientId: any, updatedData: any): Observable<Client> {
   return this.http.put<Client>(`${this.API_BASE}/clients/${clientId}`, updatedData);
 }
+
+getClientReservationsByDni(dni: string): Observable<Client[]> {
+  if (!dni?.trim()) return of([]);
+  return this.http.get<Client[]>(`${this.API_BASE}/clients/dni/${dni}/reservas`).pipe(
+    catchError(err => {
+      console.error('Error obteniendo reservas por DNI', err);
+      return of([]);
+    })
+  );
+}
+
 
 
 loadAll(): void {
@@ -1150,6 +1168,33 @@ saveClient(clientData: any, spaceKey: string): Client {
 
 
 
+
+
+
+addManualClient0(clientData: any): Observable<Client> {
+  const url = `${this.API_BASE}/clients`;
+
+  const cleanData = {
+    name: clientData.name,
+    dni: clientData.dni || null,
+    phoneIntl: clientData.phoneIntl || null,
+    vehicle: clientData.vehicle || null,
+    plate: clientData.plate || null,
+    category: clientData.category || null,
+    price: clientData.price || null,
+    //vehicleTypes: clientData.vehicleTypes || [], // NUEVO
+    clientVehicles: clientData.clientVehicles || [],
+    // NUNCA enviamos estos
+    spaceKey: null,
+    entryTimestamp: null,
+    exitTimestamp: null,
+    code: null
+  };
+
+  return this.http.post<Client>(url, cleanData);
+}
+
+
 addManualClient(clientData: any): Observable<Client> {
   const url = `${this.API_BASE}/clients`;
 
@@ -1161,8 +1206,7 @@ addManualClient(clientData: any): Observable<Client> {
     plate: clientData.plate || null,
     category: clientData.category || null,
     price: clientData.price || null,
-    vehicleType: clientData.vehicleType || null, // si viene del selector
-    // NUNCA enviamos estos
+    clientVehicles: clientData.clientVehicles || [],  // <-- cambio real
     spaceKey: null,
     entryTimestamp: null,
     exitTimestamp: null,
@@ -1171,6 +1215,7 @@ addManualClient(clientData: any): Observable<Client> {
 
   return this.http.post<Client>(url, cleanData);
 }
+
 
 private saveToLocalStorage(key: string, data: any): void {
   try {
@@ -2119,6 +2164,21 @@ transferSpace(spaceKey: string, newSubsueloId: string): void {
 }
 
 
+refreshClientsFromBackend(): void {
+  this.loadClientsFromBackend().subscribe({
+    next: (clientsFromBackend: Client[]) => {
+      const clientsMap: { [key: string]: Client } = {};
+      clientsFromBackend.forEach(c => clientsMap[c.id.toString()] = c);
+      this.clientsSubject.next(clientsMap);
+
+      this.saveAll(); // Actualizar localStorage con datos REALES
+      console.log('Clientes sincronizados desde backend');
+    },
+    error: (err) => {
+      console.warn('No se pudieron refrescar clientes desde backend', err);
+    }
+  });
+}
 
 
 
@@ -3989,7 +4049,7 @@ generateReportDetailHtml0(report: Report): string {
 }*/
 
 
-generateReportDetailHtml(report: Report): string {
+generateReportDetailHtml000(report: Report): string {
   // Parsear los JSON
   const subsueloStats = JSON.parse(report.subsueloStats || '[]');
   const timeStats = JSON.parse(report.timeStats || '{}');
@@ -4241,5 +4301,538 @@ generateReportDetailHtml(report: Report): string {
 </html>
   `;
 }
+
+generateReportDetailHtml001(
+  report: Report,
+  options?: { periodLabel?: string; periodDateLabel?: string }
+): string {
+  // Parsear los JSON
+  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
+  const timeStats = JSON.parse(report.timeStats || '{}');
+  let filteredClients: any[] = [];
+  try {
+    filteredClients = JSON.parse(report.filteredClients || '[]');
+  } catch (e) {
+    console.error('Error parsing filteredClients', e);
+  }
+
+  // Parsear montos y total
+  const paymentAmounts = JSON.parse(report.paymentAmounts || '{}') as Record<string, number>;
+  const totalCobrado = report.totalCobrado || 0;
+
+  // Fecha del reporte
+  const reportDate = new Date(report.timestamp);
+  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  // Títulos dinámicos (diario/mensual)
+  const periodLabel = options?.periodLabel || 'Servicios del día';
+  const periodDateLabel = options?.periodDateLabel || formattedReportDate;
+
+  // Enriquecer clientes
+  const now = Date.now();
+  filteredClients = filteredClients.map((client: any) => {
+    let elapsedTime = 'N/A';
+    let formattedStart = '-';
+
+    const startMs =
+      typeof client.entryTimestamp === 'string'
+        ? new Date(client.entryTimestamp).getTime()
+        : client.entryTimestamp;
+
+    if (startMs && !isNaN(startMs)) {
+      const ms = now - startMs;
+      const mins = Math.floor(ms / 60000);
+      const hours = Math.floor(mins / 60);
+      const min = mins % 60;
+      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
+
+      const date = new Date(startMs);
+      formattedStart =
+        date.toLocaleDateString('es-AR', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }) +
+        ' ' +
+        date.toLocaleTimeString('es-AR', {
+          hour: '2-digit',
+          minute: '2-digit'
+        }) +
+        ' hs';
+    }
+
+    return { ...client, elapsedTime, formattedStart };
+  });
+
+  const promedioServicio = filteredClients.length > 0
+    ? Math.round(totalCobrado / filteredClients.length)
+    : 0;
+
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
+    h1 { color: #0ea5e9; text-align: center; }
+    h2 { color: #0ea5e9; margin-bottom: 20px; }
+    .section { margin-bottom: 30px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
+    .total-cobrado { border-left-color: #10b981 !important; }
+    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
+    tr:hover { background: #2d446a; }
+    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
+    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
+    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .time-number { font-size: 1.5em; font-weight: bold; }
+    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
+    .badge { padding: 0.5em 0.75em; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString('es-AR')}</h1>
+
+  <div class="container-fluid px-4">
+    <div class="section">
+      <h2>Resumen General</h2>
+      <div class="stats">
+        <div class="stat-card total-cobrado">
+          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
+          <div>Total Cobrado</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">${report.totalSpaces}</div>
+          <div>Total Espacios</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-success">${report.occupiedSpaces}</div>
+          <div>Ocupados Ahora</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-info">${report.freeSpaces}</div>
+          <div>Libres</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-warning">${report.occupancyRate}%</div>
+          <div>Ocupación Actual</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-primary">${filteredClients.length}</div>
+          <div>${periodLabel}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-info">$${promedioServicio.toLocaleString('es-AR')}</div>
+          <div>Promedio por Servicio</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Montos Cobrados por Método de Pago</h2>
+      <div class="time-stats">
+        <div class="time-card" style="border-left-color: #1e7e34;">
+          <div class="time-number" style="color: #1e7e34;">$${(paymentAmounts['efectivo'] || 0).toLocaleString('es-AR')}</div>
+          <div>Efectivo</div>
+        </div>
+        <div class="time-card" style="border-left-color: #c45c00;">
+          <div class="time-number" style="color: #c45c00;">$${(paymentAmounts['credito'] || 0).toLocaleString('es-AR')}</div>
+          <div>Crédito</div>
+        </div>
+        <div class="time-card" style="border-left-color: #0c5460;">
+          <div class="time-number" style="color: #0c5460;">$${(paymentAmounts['debito'] || 0).toLocaleString('es-AR')}</div>
+          <div>Débito</div>
+        </div>
+        <div class="time-card" style="border-left-color: #5a2d91;">
+          <div class="time-number" style="color: #5a2d91;">$${(paymentAmounts['prepago'] || 0).toLocaleString('es-AR')}</div>
+          <div>Prepago</div>
+        </div>
+        <div class="time-card" style="border-left-color: #a71d2a;">
+          <div class="time-number" style="color: #a71d2a;">$${(paymentAmounts['qr'] || 0).toLocaleString('es-AR')}</div>
+          <div>QR</div>
+        </div>
+        <div class="time-card" style="border-left-color: #b35c00;">
+          <div class="time-number" style="color: #b35c00;">$${(paymentAmounts['scaneo'] || 0).toLocaleString('es-AR')}</div>
+          <div>Escaneo</div>
+        </div>
+        <div class="time-card" style="border-left-color: #5a6268;">
+          <div class="time-number" style="color: #5a6268;">$${(paymentAmounts['S/Cargo'] || 0).toLocaleString('es-AR')}</div>
+          <div>Sin Cargo</div>
+        </div>
+        ${(paymentAmounts['otros'] || 0) > 0 ? `
+        <div class="time-card" style="border-left-color: #6c757d;">
+          <div class="time-number" style="color: #6c757d;">$${(paymentAmounts['otros'] || 0).toLocaleString('es-AR')}</div>
+          <div>Otros</div>
+        </div>
+        ` : ''}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Tiempo de Ocupación</h2>
+      <div class="time-stats">
+        <div class="time-card">
+          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
+          <div>Menos de 1h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
+          <div>1h - 3h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
+          <div>Más de 3h</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>${periodLabel} ${periodDateLabel} (${filteredClients.length})</h2>
+      ${filteredClients.length > 0 ? `
+        <table class="table table-dark table-striped">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Cliente</th>
+              <th>Espacio</th>
+              <th>Teléfono</th>
+              <th>Vehículo</th>
+              <th>Categoría</th>
+              <th>Precio</th>
+              <th>Método Pago</th>
+              <th>Clover</th>
+              <th>Ingreso</th>
+              <th>Tiempo</th>
+              <th>Salida</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredClients.map((client: any) => `
+              <tr>
+                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
+                <td>${client.name}</td>
+                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
+                <td>${client.phoneIntl || '-'}</td>
+                <td>${client.vehicle || '-'}</td>
+                <td>
+                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
+                    ${client.category || 'Sin categoría'}
+                  </span>
+                </td>
+                <td style="color: #10b981; font-weight: bold;">
+                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
+                </td>
+                <td>
+                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
+                </td>
+                <td>
+                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
+                </td>
+                <td>${client.formattedStart}</td>
+                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
+                <td>
+                  <span class="text-warning">
+                    ${client.exitTimestamp ? new Date(client.exitTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Aún en servicio'}
+                  </span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>
+  `;
+}
+
+generateReportDetailHtml(
+  report: Report,
+  options?: { periodLabel?: string; periodDateLabel?: string }
+): string {
+  // Parsear los JSON
+  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
+  const timeStats = JSON.parse(report.timeStats || '{}');
+  let filteredClients: any[] = [];
+  try {
+    filteredClients = JSON.parse(report.filteredClients || '[]');
+  } catch (e) {
+    console.error('Error parsing filteredClients', e);
+  }
+
+  // Parsear montos y total
+  const paymentAmounts = JSON.parse(report.paymentAmounts || '{}') as Record<string, number>;
+  const totalCobrado = report.totalCobrado || 0;
+
+  // Fecha del reporte
+  const reportDate = new Date(report.timestamp);
+  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+
+  // Títulos dinámicos (diario/mensual)
+  const periodLabel = options?.periodLabel || 'Servicios del día';
+  const periodDateLabel = options?.periodDateLabel || formattedReportDate;
+
+  // Helpers locales para timestamps robustos
+  const toMs = (v: any): number | null => {
+    if (v === null || v === undefined || v === '') return null;
+    const ms = typeof v === 'number' ? v : new Date(v).getTime();
+    return isNaN(ms) ? null : ms;
+  };
+
+  // Enriquecer clientes (tiempo correcto para cerrados y activos)
+  const now = Date.now();
+  filteredClients = filteredClients.map((client: any) => {
+    let elapsedTime = 'N/A';
+    let formattedStart = '-';
+
+    const startMs = toMs(client.entryTimestamp);
+    const endMs = toMs(client.exitTimestamp) ?? now;
+
+    if (startMs !== null) {
+      const ms = Math.max(0, endMs - startMs);
+      const mins = Math.floor(ms / 60000);
+      const hours = Math.floor(mins / 60);
+      const min = mins % 60;
+      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
+
+      const date = new Date(startMs);
+      formattedStart =
+        date.toLocaleDateString('es-AR', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }) +
+        ' ' +
+        date.toLocaleTimeString('es-AR', {
+          hour: '2-digit',
+          minute: '2-digit'
+        }) +
+        ' hs';
+    }
+
+    return { ...client, elapsedTime, formattedStart };
+  });
+
+  const promedioServicio = filteredClients.length > 0
+    ? Math.round(totalCobrado / filteredClients.length)
+    : 0;
+
+  return `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
+    h1 { color: #0ea5e9; text-align: center; }
+    h2 { color: #0ea5e9; margin-bottom: 20px; }
+    .section { margin-bottom: 30px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
+    .total-cobrado { border-left-color: #10b981 !important; }
+    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
+    tr:hover { background: #2d446a; }
+    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
+    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
+    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
+    .time-number { font-size: 1.5em; font-weight: bold; }
+    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
+    .badge { padding: 0.5em 0.75em; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString('es-AR')}</h1>
+
+  <div class="container-fluid px-4">
+    <div class="section">
+      <h2>Resumen General</h2>
+      <div class="stats">
+        <div class="stat-card total-cobrado">
+          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
+          <div>Total Cobrado</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">${report.totalSpaces}</div>
+          <div>Total Espacios</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-success">${report.occupiedSpaces}</div>
+          <div>Ocupados Ahora</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-info">${report.freeSpaces}</div>
+          <div>Libres</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-warning">${report.occupancyRate}%</div>
+          <div>Ocupación Actual</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-primary">${filteredClients.length}</div>
+          <div>${periodLabel}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number text-info">$${promedioServicio.toLocaleString('es-AR')}</div>
+          <div>Promedio por Servicio</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Montos Cobrados por Método de Pago</h2>
+      <div class="time-stats">
+        <div class="time-card" style="border-left-color: #1e7e34;">
+          <div class="time-number" style="color: #1e7e34;">$${(paymentAmounts['efectivo'] || 0).toLocaleString('es-AR')}</div>
+          <div>Efectivo</div>
+        </div>
+        <div class="time-card" style="border-left-color: #c45c00;">
+          <div class="time-number" style="color: #c45c00;">$${(paymentAmounts['credito'] || 0).toLocaleString('es-AR')}</div>
+          <div>Crédito</div>
+        </div>
+        <div class="time-card" style="border-left-color: #0c5460;">
+          <div class="time-number" style="color: #0c5460;">$${(paymentAmounts['debito'] || 0).toLocaleString('es-AR')}</div>
+          <div>Débito</div>
+        </div>
+        <div class="time-card" style="border-left-color: #5a2d91;">
+          <div class="time-number" style="color: #5a2d91;">$${(paymentAmounts['prepago'] || 0).toLocaleString('es-AR')}</div>
+          <div>Prepago</div>
+        </div>
+        <div class="time-card" style="border-left-color: #a71d2a;">
+          <div class="time-number" style="color: #a71d2a;">$${(paymentAmounts['qr'] || 0).toLocaleString('es-AR')}</div>
+          <div>QR</div>
+        </div>
+        <div class="time-card" style="border-left-color: #b35c00;">
+          <div class="time-number" style="color: #b35c00;">$${(paymentAmounts['scaneo'] || 0).toLocaleString('es-AR')}</div>
+          <div>Escaneo</div>
+        </div>
+        <div class="time-card" style="border-left-color: #5a6268;">
+          <div class="time-number" style="color: #5a6268;">$${(paymentAmounts['S/Cargo'] || 0).toLocaleString('es-AR')}</div>
+          <div>Sin Cargo</div>
+        </div>
+        ${(paymentAmounts['otros'] || 0) > 0 ? `
+        <div class="time-card" style="border-left-color: #6c757d;">
+          <div class="time-number" style="color: #6c757d;">$${(paymentAmounts['otros'] || 0).toLocaleString('es-AR')}</div>
+          <div>Otros</div>
+        </div>
+        ` : ''}
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Tiempo de Ocupación</h2>
+      <div class="time-stats">
+        <div class="time-card">
+          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
+          <div>Menos de 1h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
+          <div>1h - 3h</div>
+        </div>
+        <div class="time-card">
+          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
+          <div>Más de 3h</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>${periodLabel} ${periodDateLabel} (${filteredClients.length})</h2>
+      ${filteredClients.length > 0 ? `
+        <table class="table table-dark table-striped">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Cliente</th>
+              <th>Espacio</th>
+              <th>Teléfono</th>
+              <th>Vehículo</th>
+              <th>Categoría</th>
+              <th>Precio</th>
+              <th>Método Pago</th>
+              <th>Clover</th>
+              <th>Ingreso</th>
+              <th>Tiempo</th>
+              <th>Salida</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredClients.map((client: any) => `
+              <tr>
+                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
+                <td>${client.name}</td>
+                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
+                <td>${client.phoneIntl || '-'}</td>
+                <td>${client.vehicle || '-'}</td>
+                <td>
+                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
+                    ${client.category || 'Sin categoría'}
+                  </span>
+                </td>
+                <td style="color: #10b981; font-weight: bold;">
+                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
+                </td>
+                <td>
+                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
+                </td>
+                <td>
+                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
+                </td>
+                <td>${client.formattedStart}</td>
+                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
+                <td>
+                  <span class="text-warning">
+                    ${client.exitTimestamp ? new Date(client.exitTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Aún en servicio'}
+                  </span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>
+  `;
+}
+
+
 
 }

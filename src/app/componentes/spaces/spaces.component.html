@@ -444,20 +444,29 @@
     </div>
 
     <div class="client-vehicles-modal__body">
+
       <div class="row g-2 mb-3">
-        <div class="col-md-4">
-          <label class="form-label">Modelo *</label>
-          <input class="form-control form-control-dark" [(ngModel)]="clientVehicleEditor.model" placeholder="Ej: Toyota Corolla">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Matrícula</label>
-          <input class="form-control form-control-dark" [(ngModel)]="clientVehicleEditor.plate" placeholder="ABC123">
-        </div>
-        <div class="col-md-5">
-          <label class="form-label">Notas</label>
-          <input class="form-control form-control-dark" [(ngModel)]="clientVehicleEditor.notes" placeholder="Color, versión, etc.">
-        </div>
-      </div>
+  <div class="col-md-4">
+    <label class="form-label">Modelo *</label>
+    <input class="form-control form-control-dark"
+           [(ngModel)]="clientVehicleEditor.model"
+           placeholder="Ej: Toyota Corolla"
+           [readonly]="editingClientVehicleIndex !== null">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Matrícula</label>
+    <input class="form-control form-control-dark"
+           [(ngModel)]="clientVehicleEditor.plate"
+           placeholder="ABC123">
+  </div>
+  <div class="col-md-5">
+    <label class="form-label">Notas</label>
+    <input class="form-control form-control-dark"
+           [(ngModel)]="clientVehicleEditor.notes"
+           placeholder="Color, versión, etc.">
+  </div>
+</div>
+
 
       <div class="d-flex gap-2 mb-3">
         <button class="btn btn-primary btn-sm" type="button" (click)="saveClientVehicleItem()">
@@ -467,7 +476,7 @@
         <button
           class="btn btn-outline-secondary btn-sm"
           type="button"
-          (click)="clientVehicleEditor = { model: '', plate: '', notes: '' }; editingClientVehicleIndex = null">
+          (click)="clientVehicleEditor = { model: '', plate:'', notes: '' }; editingClientVehicleIndex = null">
           Limpiar
         </button>
       </div>
@@ -481,8 +490,11 @@
             <strong>{{ item.model }}</strong>
             <span class="badge bg-secondary">#{{ i + 1 }}</span>
           </div>
+          <!--div class="small text-muted">Categoría: {{ item.category || '-' }}</!--div>
+          <div-- class="small text-muted mb-2">Precio: ${{ item.price || 0 }}</div-->
           <div class="small text-muted">Matrícula: {{ item.plate || '-' }}</div>
-          <div class="small text-muted mb-2">Notas: {{ item.notes || '-' }}</div>
+         <div class="small text-muted mb-2">Notas: {{ item.notes || '-' }}</div>
+
           <div class="d-flex gap-2">
             <button class="btn btn-outline-warning btn-sm" type="button" (click)="editClientVehicleItem(i); $event.stopPropagation()">
               Editar
@@ -522,16 +534,20 @@
             <tr>
               <th>Fecha</th>
               <th>Vehículo</th>
+              <th>Categoría</th>
               <th>Matrícula</th>
-              <th>Espacio</th>
+              <!--th>Espacio</th-->
+
             </tr>
           </thead>
           <tbody>
             <tr *ngFor="let visit of frequentClientVisitsSnapshot">
-              <td>{{ formatVisitDateLabel(visit.entryTimestamp) }}</td>
+              <!--td>{{ formatVisitDateLabel(visit.entryTimestamp) }}</td-->
+              <td>{{ formatVisitDateLabel(getVisitTimestamp(visit)) }}</td>
               <td>{{ visit.vehicle || '-' }}</td>
+              <td>{{ visit.category || '-'}}</td>
               <td>{{ visit.plate || '-' }}</td>
-              <td>{{ visit.spaceKey || '-' }}</td>
+              <!--td>{{ visit.spaceKey || '-' }}</td-->
             </tr>
           </tbody>
         </table>
@@ -924,6 +940,7 @@
               <th>Código</th>
               <th>Espacio</th>
               <th>Última visita</th>
+              <th>Frecuencia</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -939,6 +956,7 @@
               <td>{{client.plate || '-'}}</td>
               <td><span class="badge bg-secondary">{{client.code || '-'}}</span></td>
               <td>{{client.spaceKey || '-'}}</td>
+
               <!--td>
   <span *ngIf="client.entryTimestamp || client.exitTimestamp; else noVisit">
     {{ formatDateOnly(client.entryTimestamp ?? client.exitTimestamp) }}
@@ -968,6 +986,24 @@
     <span class="text-muted">-</span>
   </ng-container>
 </td>
+
+<td>
+<ng-container *ngIf="getMonthlyServiceCountForClient(client) as count">
+  <span class="badge bg-dark me-2">{{ count }} visitas en el mes</span>
+  <!--span-- *ngIf="getTopTierForClient(client) !== 'ninguno'" class="badge"
+
+        [ngClass]="{
+          'bg-warning text-dark': getTopTierForClient(client) === 'oro',
+          'bg-secondary': getTopTierForClient(client) === 'plata',
+          'bg-bronze': getTopTierForClient(client) === 'bronce'
+        }">
+    <i class="bi bi-award-fill me-1"></i>{{ getTopTierForClient(client) | uppercase }}
+  </!--span-->
+</ng-container>
+</td>
+
+
+
 
               <td>
                 <div class="d-flex gap-1 justify-content-center">
@@ -1026,151 +1062,6 @@
 
 
 
-<!--div-- class="modal fade" id="newClientModal" tabindex="-1" aria-labelledby="newClientModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
-    <div class="modal-content modal-dark">
-      <div class="modal-header">
-        <h5 class="modal-title" id="newClientModalLabel">
-          <i class="fas fa-user-plus me-2"></i>
-          Agregar Cliente Manual (sin espacio)
-        </h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-
-      <div class="modal-body">
-        <form [formGroup]="newClientForm" class="row g-3">
-
-
-          <div class="col-md-6">
-            <label class="form-label">DNI *</label>
-            <input
-              formControlName="dni"
-              class="form-control form-control-dark"
-              placeholder="Ej: 40123456"
-              pattern="[0-9]{7,8}"
-              required />
-            <div class="form-text">Sin puntos ni espacios</div>
-            <div *ngIf="newClientForm.get('dni')?.invalid && newClientForm.get('dni')?.touched" class="text-danger small mt-1">
-              <span *ngIf="newClientForm.get('dni')?.errors?.['required']">
-                El DNI es obligatorio
-              </span>
-              <span *ngIf="newClientForm.get('dni')?.errors?.['pattern']">
-                DNI inválido. Debe tener 7 u 8 dígitos
-              </span>
-            </div>
-          </div>
-
-
-          <div class="col-md-6">
-            <label class="form-label">Nombre y apellido *</label>
-            <input
-              formControlName="name"
-              class="form-control form-control-dark"
-              required />
-            <div *ngIf="newClientForm.get('name')?.invalid && newClientForm.get('name')?.touched" class="text-danger small mt-1">
-              Nombre obligatorio
-            </div>
-          </div>
-
-          <div class="col-md-6">
-            <label class="form-label">Modelo de vehículo *</label>
-            <div class="input-group input-group-lg">
-              <input
-                formControlName="vehicle"
-                class="form-control form-control-dark"
-                placeholder="Seleccione un vehículo desde la lista"
-                readonly
-                required />
-              <button
-                class="btn btn-outline-info"
-                type="button"
-                (click)="openVehicleAsideForManual()"
-                title="Abrir lista de vehículos">
-                <i class="fas fa-list me-2"></i> Elegir
-              </button>
-            </div>
-            <div class="form-text">Precio y categoría se aplicarán automáticamente</div>
-            <div *ngIf="newClientForm.get('vehicle')?.invalid && newClientForm.get('vehicle')?.touched" class="text-danger small mt-1">
-              Vehículo obligatorio
-            </div>
-          </div>
-
-
-          <div class="col-md-6">
-            <label class="form-label">Precio del servicio</label>
-            <div class="input-group">
-              <span class="input-group-text">$</span>
-              <input
-                type="number"
-                formControlName="price"
-                class="form-control form-control-lg shadow-sm"
-                style="background: #00040a; border: 1px solid #6d7b92; color: #edeff0;"
-                readonly
-                placeholder="Se carga automáticamente">
-            </div>
-            <div class="form-text">Precio por defecto según vehículo seleccionado</div>
-          </div>
-
-           <div class="col-md-6">
-            <label class="form-label">Teléfono *</label>
-            <div class="input-group input-group-lg">
-              <input
-                id="newPhoneIntlInput"
-                formControlName="phoneIntl"
-                type="tel"
-                class="form-control form-control-dark"
-                placeholder="Ej: +5491126911817"
-                required />
-              <span class="input-group-text bg-transparent border-0">
-                <i class="fas" [ngClass]="newPhoneIsValid ? 'fa-check text-success' : 'fa-times text-danger'"></i>
-              </span>
-            </div>
-            <div class="form-text text-info">
-              País detectado: {{newPhoneFlag}} {{newPhoneCode}} {{newPhoneCountry || 'Escribe el número'}}
-            </div>
-          <div *ngIf="!newPhoneIsValid && newClientForm.get('phoneIntl')?.touched" class="text-danger small mt-1">
-  <div *ngIf="newPhoneErrorMessage">
-    <i class="fas fa-exclamation-circle me-1"></i>{{ newPhoneErrorMessage }}
-  </div>
-  <div *ngIf="!newPhoneErrorMessage">
-    Teléfono inválido para el país seleccionado
-  </div>
-
-  <div class="mt-1" *ngIf="newPhoneCode === '+54'">
-    <strong>Formato correcto:</strong> +54 9 [código área] [número]<br>
-    <em>Ejemplo:</em> +54 9 11 26911817 (Buenos Aires)
-  </div>
-</div>
-            <div class="form-text text-muted" *ngIf="newPhoneCode === '+54' && !newPhoneIsValid">
-              <i class="fas fa-info-circle me-1"></i>{{ getPhoneFormatHint() }}
-            </div>
-          </div>
-
-
-          <div class="col-md-6">
-            <label class="form-label">Matrícula / Patente (opcional)</label>
-            <input
-              formControlName="plate"
-              class="form-control form-control-dark"
-              placeholder="AA123BB / ABC123" />
-          </div>
-
-
-          <div class="col-12 mt-4">
-            <button
-              class="btn btn-primary btn-lg w-100"
-              type="button"
-              (click)="saveNewClient()"
-              [disabled]="newClientForm.invalid || !newPhoneIsValid || isSavingNewClient">
-              <span *ngIf="isSavingNewClient" class="spinner-border spinner-border-sm me-2"></span>
-              Guardar Cliente Manual
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-</!--div-->
 
 
 
