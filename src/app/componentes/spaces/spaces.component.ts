@@ -2039,7 +2039,7 @@ saveClientVehicleItem0(): void {
 }
 
 
-saveClientVehicleItem(): void {
+saveClientVehicleItem01(): void {
   this.withClientVehiclesSyncLock(() => {
     const model = (this.clientVehicleEditor.model || '').trim();
     if (!model) {
@@ -2090,6 +2090,59 @@ saveClientVehicleItem(): void {
   });
 }
 
+saveClientVehicleItem(): void {
+  this.withClientVehiclesSyncLock(() => {
+    if (this.editingClientVehicleIndex === null) {
+      this.setClientVehiclesModalError('Selecciona un vehículo y pulsa "Editar" para actualizarlo.');
+      return;
+    }
+
+    const model = (this.clientVehicleEditor.model || '').trim();
+    if (!model) {
+      this.setClientVehiclesModalError('Debes ingresar el modelo del vehículo.');
+      return;
+    }
+
+    this.setClientVehiclesModalError('');
+
+    const payload: ClientVehicleItem = {
+      model,
+      plate: (this.clientVehicleEditor.plate || '').trim(),
+      notes: (this.clientVehicleEditor.notes || '').trim()
+    };
+
+    const before = (this.clientVehiclesList || []).map(v => ({ ...v }));
+
+    try {
+      const original = this.clientVehiclesList[this.editingClientVehicleIndex];
+      if (!original) return;
+
+      // Modelo no editable
+      payload.model = original.model;
+
+      this.clientVehiclesList[this.editingClientVehicleIndex] = payload;
+      this.persistCurrentClientVehicles();
+
+      console.log('[Vehicles] saveClientVehicleItem (solo update) -> lista local actualizada', {
+        editingIndex: this.editingClientVehicleIndex,
+        savedItem: payload,
+        list: this.clientVehiclesList
+      });
+
+      this.clearClientVehicleEditorState();
+
+      // Sync backend con rollback local si falla
+      this.syncClientVehiclesListToBackend('save', before);
+
+    } catch (e: any) {
+      this.clientVehiclesList = before.map(v => ({ ...v }));
+      this.persistCurrentClientVehicles();
+
+      console.error('[Vehicles] Error actualizando vehículo local', e);
+      this.setClientVehiclesModalError(e?.message || 'Error al actualizar vehículo');
+    }
+  });
+}
 
 
 
