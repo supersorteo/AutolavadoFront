@@ -162,4 +162,10 @@ export class ReportsListComponent implements OnInit{
     }
   }
 
+
+  trackByReportId(index: number, row: ReportListRow): number {
+  return row?.id ?? index;
+}
+
+
 }

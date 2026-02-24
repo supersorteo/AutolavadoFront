@@ -436,9 +436,11 @@ img.rounded-circle:hover {
 }
 
 .client-vehicles-modal {
-  position: fixed;
+  //position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 2100;
+  //z-index: 2100;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -449,17 +451,20 @@ img.rounded-circle:hover {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.72);
+  border-radius: 0.75rem;
 }
 
 .client-vehicles-modal__content {
   position: relative;
   z-index: 1;
   width: min(920px, 100%);
-  max-height: 90vh;
+  //max-height: 90vh;
+  max-height: calc(100% - 1rem);
   overflow: auto;
   background: #0c0e15;
   border: 1px solid #2b2b2b;
   border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
 .client-vehicles-modal__header {

@@ -129,6 +129,8 @@ private readonly PAYMENT_COLORS_KEY = 'exellsior_payment_colors';
 filteredDailyClientsList: Client[] = [];  // Lista filtrada real (no getter)
 paginatedDailyClientsList: Client[] = []; // Lista paginada real
 
+private statsRefreshIntervalId: any = null;
+
   constructor(private autolavadoService: AutolavadoService, private cdr: ChangeDetectorRef, private http: HttpClient) {}
 
 
@@ -148,14 +150,29 @@ paginatedDailyClientsList: Client[] = []; // Lista paginada real
       this.filteredClients = dailyClients;
       this.dailyClients = dailyClients;
       console.log('Filtered Clients cargados:', dailyClients);
+
+      console.log('[Reports] combineLatest update', {
+      subsuelos: subsuelos.length,
+      spaces: Object.keys(spaces || {}).length,
+      clients: Object.keys(clients || {}).length,
+      dailyClients: dailyClients.length
+    });
+
+    this.applyDailyClientFiltersAndPagination();
+
       this.calculateStats();
       this.cdr.detectChanges();
     });
 
-    setInterval(() => {
+    this.statsRefreshIntervalId = setInterval(() => {
+    this.calculateStats();
+    this.cdr.detectChanges();
+  }, 60000);
+
+   /* setInterval(() => {
       this.calculateStats();
       this.cdr.detectChanges();
-    }, 60000);
+    }, 60000);*/
 
 
 
@@ -167,30 +184,34 @@ paginatedDailyClientsList: Client[] = []; // Lista paginada real
 
 
 
-  this.autolavadoService.dailyClients$.subscribe(() => {
+  /*this.autolavadoService.dailyClients$.subscribe(() => {
     this.calculateStats();
     this.cdr.detectChanges();
-  });
+  });*/
 
 this.loadPaymentColors();
   }
 
 
 
+
+
   ngOnDestroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
+  if (this.statsRefreshIntervalId) {
+    clearInterval(this.statsRefreshIntervalId);
+    this.statsRefreshIntervalId = null;
   }
 
-  private toTimestamp0(value: any): number | null {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number') return isNaN(value) ? null : value;
-  if (typeof value === 'string') {
-    const parsed = new Date(value).getTime();
-    return isNaN(parsed) ? null : parsed;
+  if (this.dailyInterval) {
+    clearInterval(this.dailyInterval);
+    this.dailyInterval = null;
   }
-  return null;
+
+  this.destroy$.next();
+  this.destroy$.complete();
 }
+
+
 
 private toTimestamp(value: any, fallback?: any): number | null {
   if (value === null || value === undefined || value === '') {
@@ -227,61 +248,7 @@ private getClientIdentityKey(c: Client): string {
 
 
 
-private buildMonthlyRanking0(): RankingClienteView[] {
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
 
-  const allClients = Object.values(this.clients || {});
-  const map = new Map<string, {
-    sample: Client;
-    count: number;
-    lastTs: number;
-  }>();
-
-  allClients.forEach(c => {
-    const ts = this.toTimestamp(c.entryTimestamp);
-    if (ts === null || ts < monthStart || ts >= nextMonthStart) return;
-
-    const key = this.getClientIdentityKey(c);
-    const current = map.get(key);
-
-    if (!current) {
-      map.set(key, { sample: c, count: 1, lastTs: ts });
-    } else {
-      current.count += 1;
-      if (ts > current.lastTs) {
-        current.lastTs = ts;
-        current.sample = c;
-      }
-    }
-  });
-
-  const ranking = Array.from(map.values())
-    .map(item => ({
-      position: 0,
-      name: item.sample.name || '-',
-      dni: item.sample.dni || '-',
-      phone: item.sample.phoneIntl || '-',
-      totalServices: item.count,
-      lastVisit: new Date(item.lastTs).toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }),
-      tier: 'ninguno' as RankingClienteView['tier']
-    }))
-    .sort((a, b) => b.totalServices - a.totalServices);
-
-  ranking.forEach((r, i) => {
-    r.position = i + 1;
-    if (r.position === 1) r.tier = 'oro';
-    else if (r.position === 2) r.tier = 'plata';
-    else if (r.position === 3) r.tier = 'bronce';
-  });
-
-  return ranking;
-}
 
 private buildMonthlyRanking(): RankingClienteView[] {
   const now = new Date();
@@ -365,12 +332,7 @@ toggleReportsList(): void {
   }
 }
 
-toggleClientsRanking0(): void {
-  this.showClientsRanking = !this.showClientsRanking;
-  if (this.showClientsRanking) {
-    this.currentRankingPage = 1;
-  }
-}
+
 
 toggleClientsRanking(): void {
   this.showClientsRanking = !this.showClientsRanking;
@@ -384,14 +346,7 @@ closeClientsRanking(): void {
   this.showClientsRanking = false;
 }
 
-/*get totalRankingPages(): number {
-  return Math.max(1, Math.ceil(this.rankingPreview.length / this.rankingPageSize));
-}
 
-get paginatedRankingPreview(): RankingClienteView[] {
-  const start = (this.currentRankingPage - 1) * this.rankingPageSize;
-  return this.rankingPreview.slice(start, start + this.rankingPageSize);
-}*/
 
 get totalRankingPages(): number {
   return Math.max(1, Math.ceil(this.rankingList.length / this.rankingPageSize));
@@ -516,12 +471,20 @@ get pageNumbersDaily(): number[] {
   return pages;
 }
 
-setPageDaily(page: number): void {
+setPageDaily0(page: number): void {
   if (page >= 1 && page <= this.totalPagesDaily) {
     this.currentPageDaily = page;
   }
 }
 
+setPageDaily(page: number): void {
+  const totalPages = this.totalPagesDaily;
+
+  if (page < 1 || page > totalPages) return;
+
+  this.currentPageDaily = page;
+  this.applyDailyClientFiltersAndPagination();
+}
 
 
 
@@ -597,73 +560,6 @@ private darkenColor(hex: string, factor: number = 0.2): string {
 
 
 
-/*acceptEditClient(): void {
-  console.log('Botón Guardar cambios pulsado');
-
-  if (!this.editingClient) return;
-
-  const clientId = this.editingClient.id;
-  if (!clientId) {
-    alert('Error: cliente sin ID');
-    return;
-  }
-
-  // Validación Clover
-  if (this.editForm.clover && !/^\d{4}$/.test(this.editForm.clover)) {
-    alert('El código Clover debe tener exactamente 4 dígitos numéricos');
-    return;
-  }
-
-  const updatedData = {
-    price: this.editForm.valor,
-    code: this.editForm.clave || null,
-    clover: this.editForm.clover ? parseInt(this.editForm.clover, 10) : null,
-    paymentMethod: this.editForm.metodoPago,
-    vehicleType: this.editingClient.vehicleType ? { id: this.editingClient.vehicleType.id } : null
-  };
-
-  console.log('Payload enviado al backend:', updatedData);
-
-  this.autolavadoService.updateClientInBackend(clientId, updatedData).subscribe({
-    next: (updatedClient) => {
-      console.log('Cliente actualizado:', updatedClient);
-
-      // Actualizar en memoria
-      const clientsMap = this.autolavadoService.clientsSubject.value;
-      const clientKey = clientId.toString();
-      if (clientsMap[clientKey]) {
-        clientsMap[clientKey].price = updatedClient.price;
-        clientsMap[clientKey].code = updatedClient.code;
-        clientsMap[clientKey].paymentMethod = updatedClient.paymentMethod;
-        clientsMap[clientKey].clover = updatedClient.clover;
-        this.autolavadoService.clientsSubject.next({ ...clientsMap });
-        this.autolavadoService.saveAll();
-      }
-
-      // Guardar color según método de pago
-      const method = updatedClient.paymentMethod?.trim().toLowerCase() || '';
-      if (method && this.paymentMethodColors[method]) {
-        this.paymentColorsByClientId[clientId.toString()] = this.paymentMethodColors[method];
-        console.log(`Color persistente GUARDADO para ${clientId}: ${this.paymentMethodColors[method]}`);
-      } else {
-        delete this.paymentColorsByClientId[clientId.toString()];
-        console.log(`Color eliminado para ${clientId} (método vacío)`);
-      }
-      this.savePaymentColors();
-
-      // Forzar actualización visual
-      this.calculateStats();
-      this.cdr.detectChanges();
-      this.cdr.markForCheck(); // Extra para asegurar renderizado
-
-      this.showEditClientHeaderMessage('Datos actualizados correctamente');
-    },
-    error: (err) => {
-      console.error('Error al actualizar:', err);
-      alert('Error al actualizar');
-    }
-  });
-}*/
 
 acceptEditClient(): void {
   console.log('Botón Guardar cambios pulsado');
@@ -771,7 +667,7 @@ isClientPaid(client: Client): boolean {
 
 
 
-private calculateStats(): void {
+private calculateStats0(): void {
   const spacesArray = Object.values(this.spaces);
 
   // Estadísticas generales (espacios actuales - se mantienen)
@@ -841,6 +737,132 @@ private calculateStats(): void {
 }
 
 
+private calculateStats(): void {
+  const spacesArray = Object.values(this.spaces || {});
+  const dailyClients = this.dailyClients || [];
+  const now = Date.now();
+
+  console.log('[Reports.calculateStats] Inicio', {
+    spaces: spacesArray.length,
+    subsuelos: this.subsuelos?.length || 0,
+    dailyClients: dailyClients.length
+  });
+
+  // -----------------------------
+  // 1) Estadísticas generales + por subsuelo (una sola pasada en spaces)
+  // -----------------------------
+  let occupiedCount = 0;
+
+  const subsueloAccumulator: Record<string, { total: number; occupied: number }> = {};
+  for (const sub of this.subsuelos || []) {
+    subsueloAccumulator[sub.id] = { total: 0, occupied: 0 };
+  }
+
+  for (const space of spacesArray) {
+    if (space.occupied) occupiedCount++;
+
+    const subId = space.subsueloId;
+    if (!subId) continue;
+
+    if (!subsueloAccumulator[subId]) {
+      subsueloAccumulator[subId] = { total: 0, occupied: 0 };
+    }
+
+    subsueloAccumulator[subId].total += 1;
+    if (space.occupied) {
+      subsueloAccumulator[subId].occupied += 1;
+    }
+  }
+
+  this.totalSpaces = spacesArray.length;
+  this.occupiedSpaces = occupiedCount;
+  this.freeSpaces = this.totalSpaces - this.occupiedSpaces;
+  this.occupancyRate =
+    this.totalSpaces > 0
+      ? Math.round((this.occupiedSpaces / this.totalSpaces) * 100)
+      : 0;
+
+  this.subsueloStats = (this.subsuelos || []).map(sub => {
+    const acc = subsueloAccumulator[sub.id] || { total: 0, occupied: 0 };
+    const free = acc.total - acc.occupied;
+    const occupancyRate = acc.total > 0 ? Math.round((acc.occupied / acc.total) * 100) : 0;
+
+    return {
+      id: sub.id,
+      label: sub.label,
+      total: acc.total,
+      occupied: acc.occupied,
+      free,
+      occupancyRate
+    };
+  });
+
+  // -----------------------------
+  // 2) Estadísticas del día (una sola pasada en dailyClients)
+  // -----------------------------
+  let totalCobrado = 0;
+
+  const paymentCounts = {
+    efectivo: 0,
+    credito: 0,
+    prepago: 0,
+    qr: 0,
+    otros: 0
+  };
+
+  const nextTimeStats = {
+    under1h: 0,
+    between1h3h: 0,
+    over3h: 0
+  };
+
+  for (const c of dailyClients) {
+    totalCobrado += Number(c.price || 0);
+
+    const method = ((c.paymentMethod || 'otros') as string).toString().trim().toLowerCase();
+    if (method === 'efectivo' || method === 'credito' || method === 'prepago' || method === 'qr') {
+      paymentCounts[method]++;
+    } else {
+      paymentCounts.otros++;
+    }
+
+    const entryTs = this.toTimestamp(c.entryTimestamp);
+    if (entryTs !== null) {
+      const elapsedMs = now - entryTs;
+      const elapsedHours = elapsedMs / 3600000;
+
+      if (elapsedHours < 1) nextTimeStats.under1h++;
+      else if (elapsedHours <= 3) nextTimeStats.between1h3h++;
+      else nextTimeStats.over3h++;
+    }
+  }
+
+  this.dailyTotalCobrado = totalCobrado;
+
+  const totalServices = dailyClients.length;
+  const pct = (count: number) => (totalServices > 0 ? Math.round((count / totalServices) * 100) : 0);
+
+  this.paymentStats = {
+    efectivo: { count: paymentCounts.efectivo, pct: pct(paymentCounts.efectivo) },
+    credito: { count: paymentCounts.credito, pct: pct(paymentCounts.credito) },
+    prepago: { count: paymentCounts.prepago, pct: pct(paymentCounts.prepago) },
+    qr: { count: paymentCounts.qr, pct: pct(paymentCounts.qr) },
+    otros: { count: paymentCounts.otros, pct: pct(paymentCounts.otros) }
+  };
+
+  this.timeStats = nextTimeStats;
+
+  console.log('[Reports.calculateStats] Resultado', {
+    totalSpaces: this.totalSpaces,
+    occupiedSpaces: this.occupiedSpaces,
+    freeSpaces: this.freeSpaces,
+    occupancyRate: this.occupancyRate,
+    dailyTotalCobrado: this.dailyTotalCobrado,
+    paymentStats: this.paymentStats,
+    timeStats: this.timeStats,
+    subsueloStats: this.subsueloStats
+  });
+}
 
 
 
@@ -875,8 +897,13 @@ openEditClient(client: Client): void {
   }
 
 
-  onSearchClients(): void {
+  onSearchClients0(): void {
   this.currentPageDaily = 1;  // Reinicia a página 1 al buscar
+}
+
+onSearchClients(): void {
+  this.currentPageDaily = 1;
+  this.applyDailyClientFiltersAndPagination();
 }
 
 
@@ -886,23 +913,11 @@ openEditClient(client: Client): void {
   }
 
 
-  get filteredDailyClients0(): Client[] {
-  if (!this.searchTerm.trim()) {
-    return this.dailyClients;
-  }
 
-  const term = this.searchTerm.toLowerCase();
-  return this.dailyClients.filter(client =>
-    (client.name?.toLowerCase().includes(term)) ||
-    (client.code?.toLowerCase().includes(term)) ||
-    (client.phoneIntl?.includes(term)) ||
-    (client.vehicle?.toLowerCase().includes(term)) ||
-    (client.plate?.toLowerCase().includes(term)) ||
-    (client.dni?.includes(term))
-  );
-}
 
-get filteredDailyClients(): Client[] {
+
+
+get filteredDailyClients0(): Client[] {
   if (!this.searchTerm.trim()) {
     this.filteredDailyClientsList = this.dailyClients;
   } else {
@@ -919,22 +934,31 @@ get filteredDailyClients(): Client[] {
   return this.filteredDailyClientsList;
 }
 
-// NUEVO: paginación basada en los filtrados
-get paginatedDailyClients0(): Client[] {
-  const start = (this.currentPageDaily - 1) * this.pageSizeDaily;
-  return this.filteredDailyClients.slice(start, start + this.pageSizeDaily);
+
+get filteredDailyClients(): Client[] {
+  return this.filteredDailyClientsList || [];
 }
 
-get paginatedDailyClients(): Client[] {
+
+
+get paginatedDailyClients0(): Client[] {
   const start = (this.currentPageDaily - 1) * this.pageSizeDaily;
   this.paginatedDailyClientsList = this.filteredDailyClients.slice(start, start + this.pageSizeDaily);
   return this.paginatedDailyClientsList;
 }
 
-get totalPagesDaily(): number {
+get totalPagesDaily0(): number {
   return Math.ceil(this.filteredDailyClients.length / this.pageSizeDaily);
 }
 
+get totalPagesDaily(): number {
+  return Math.max(1, Math.ceil((this.filteredDailyClientsList?.length || 0) / this.pageSizeDaily));
+}
+
+
+get paginatedDailyClients(): Client[] {
+  return this.paginatedDailyClientsList || [];
+}
 
 
 
@@ -1147,203 +1171,54 @@ private checkAndGenerateDailyReport(): void {
 }
 
 
+private applyDailyClientFiltersAndPagination(): void {
+  const source = this.dailyClients || [];
+  const rawTerm = (this.searchTerm || '').toString().trim().toLowerCase();
 
+  let filtered: Client[];
 
-
-
-
-
-
-generateAndSaveReport0(isManual: boolean = false): void {
-  // 1. OBTENER TODOS LOS CLIENTES DEL DÍA (del nuevo dailyClients$)
-  const type = isManual ? 'MANUAL' : 'AUTOMÁTICO';
-  console.log(`%cINICIANDO GENERACIÓN DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
-  const clientsForReport = this.dailyClients;  // ← CAMBIO CLAVE: todos los del día
-
-  /*if (clientsForReport.length === 0) {
-    alert('No hay clientes para generar el reporte del día');
-    return;
-  }*/
-
-  if (clientsForReport.length === 0) {
-    console.warn(`No hay clientes para el reporte ${type}. Se cancela.`);
-    if (isManual) {
-      alert('No hay clientes para generar el reporte del día');
-    }
-    return;
+  if (!rawTerm) {
+    filtered = [...source];
+  } else {
+    filtered = source.filter(client =>
+      (client.name?.toLowerCase().includes(rawTerm)) ||
+      (client.code?.toLowerCase().includes(rawTerm)) ||
+      (client.phoneIntl?.includes(rawTerm)) ||
+      (client.vehicle?.toLowerCase().includes(rawTerm)) ||
+      (client.plate?.toLowerCase().includes(rawTerm)) ||
+      (client.dni?.includes(rawTerm))
+    );
   }
 
-  console.log('Clientes del día para reporte:', clientsForReport.length);
+  this.filteredDailyClientsList = filtered;
 
-  // 2. ENRIQUECER con startTime (ya lo tienen de entryTimestamp, pero usamos startTime del space si existe)
-  const enrichedClients = clientsForReport.map(client => {
-    const space = this.spaces[client.spaceKey || ''];
-    return {
-      ...client,
-      startTime: space?.startTime || client.entryTimestamp || null,
-      spaceDisplayName: space ? (space.displayName || client.spaceKey) : client.spaceKey || '-'
-    };
-  });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / this.pageSizeDaily));
 
-  // 3. Preparar datos para el reporte
-  const reportData = {
-    timestamp: new Date().toISOString(),
-    totalSpaces: this.totalSpaces,
-    occupiedSpaces: this.occupiedSpaces,
-    freeSpaces: this.freeSpaces,
-    occupancyRate: this.occupancyRate,
-    subsueloStats: JSON.stringify(this.subsueloStats),
-    timeStats: JSON.stringify(this.timeStats),
-    filteredClients: JSON.stringify(enrichedClients)  // ← Todos los clientes del día
-  };
+  // Ajustar página actual si quedó fuera de rango
+  if (this.currentPageDaily > totalPages) {
+    this.currentPageDaily = totalPages;
+  }
+  if (this.currentPageDaily < 1) {
+    this.currentPageDaily = 1;
+  }
 
-  console.log('Generando y guardando reporte con todos los clientes del día...', reportData);
+  const start = (this.currentPageDaily - 1) * this.pageSizeDaily;
+  const end = start + this.pageSizeDaily;
 
-  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
-    next: (savedReport) => {
-      console.log('Reporte guardado en backend:', savedReport);
+  this.paginatedDailyClientsList = filtered.slice(start, end);
 
-      const detailHtml = this.autolavadoService.generateReportDetailHtml({
-        ...reportData,
-        id: savedReport.id,
-        timestamp: savedReport.timestamp,
-        subsueloStats: reportData.subsueloStats,
-        timeStats: reportData.timeStats,
-        filteredClients: reportData.filteredClients
-      } as Report);
-
-      const blob = new Blob([detailHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      console.log(`%cREPORTE ${type} DESCARGADO CORRECTAMENTE`, 'color: #10b981; font-weight: bold;');
-
-      this.showSuccessToast(
-        isManual
-          ? 'Reporte manual generado y descargado (todos los clientes del día)'
-          : 'Reporte diario automático generado y descargado (todos los clientes del día)'
-      );
-    },
-    error: (error) => {
-      console.error('Error al generar reporte', error);
-      this.showErrorToast('Error al generar el reporte');
-    }
+  console.log('[Reports] applyDailyClientFiltersAndPagination', {
+    source: source.length,
+    searchTerm: this.searchTerm,
+    filtered: this.filteredDailyClientsList.length,
+    currentPageDaily: this.currentPageDaily,
+    pageSizeDaily: this.pageSizeDaily,
+    paginated: this.paginatedDailyClientsList.length,
+    totalPages
   });
 }
 
 
-generateAndSaveReport00(isManual: boolean = false): void {
-  const type = isManual ? 'MANUAL' : 'AUTOMÁTICO';
-  console.log(`%cINICIANDO GENERACIÓN DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
-  const clientsForReport = this.dailyClients;
-
-  if (clientsForReport.length === 0) {
-    console.warn(`No hay clientes para el reporte ${type}. Se cancela.`);
-    if (isManual) {
-      alert('No hay clientes para generar el reporte del día');
-    }
-    return;
-  }
-
-  console.log('Clientes del día para reporte:', clientsForReport.length);
-
-  // 2. ENRIQUECER con startTime y spaceDisplayName
-  const enrichedClients = clientsForReport.map(client => {
-    const space = this.spaces[client.spaceKey || ''];
-    return {
-      ...client,
-      startTime: space?.startTime || client.entryTimestamp || null,
-      spaceDisplayName: space ? (space.displayName || client.spaceKey) : client.spaceKey || '-'
-    };
-  });
-
-  // 3. Calcular montos cobrados por método de pago
-  const paymentAmounts = {
-    efectivo: 0,
-    credito: 0,
-    prepago: 0,
-    qr: 0,
-    debito: 0,
-    scaneo: 0,
-    'S/Cargo': 0,
-    otros: 0
-  };
-
-  enrichedClients.forEach(client => {
-    const method = (client.paymentMethod || 'otros').toLowerCase();
-    const amount = client.price || 0;
-
-    if (method in paymentAmounts) {
-      paymentAmounts[method as keyof typeof paymentAmounts] += amount;
-    } else {
-      paymentAmounts.otros += amount;
-    }
-  });
-
-  // Total cobrado general (para referencia)
-  const totalCobrado = Object.values(paymentAmounts).reduce((sum, val) => sum + val, 0);
-
-  // 4. Preparar datos para el reporte (incluyendo los nuevos montos)
-  const reportData = {
-    timestamp: new Date().toISOString(),
-    totalSpaces: this.totalSpaces,
-    occupiedSpaces: this.occupiedSpaces,
-    freeSpaces: this.freeSpaces,
-    occupancyRate: this.occupancyRate,
-    subsueloStats: JSON.stringify(this.subsueloStats),
-    timeStats: JSON.stringify(this.timeStats),
-    filteredClients: JSON.stringify(enrichedClients),
-    paymentAmounts: JSON.stringify(paymentAmounts),  // ← Montos por método
-    totalCobrado: totalCobrado                     // ← Total general
-  };
-
-  console.log('Generando y guardando reporte con montos por método...', reportData);
-
-  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
-    next: (savedReport) => {
-      console.log('Reporte guardado en backend:', savedReport);
-
-      const detailHtml = this.autolavadoService.generateReportDetailHtml({
-        ...reportData,
-        id: savedReport.id,
-        timestamp: savedReport.timestamp,
-        subsueloStats: reportData.subsueloStats,
-        timeStats: reportData.timeStats,
-        filteredClients: reportData.filteredClients,
-        paymentAmounts: reportData.paymentAmounts,
-        totalCobrado: reportData.totalCobrado
-      } as Report);
-
-      const blob = new Blob([detailHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_exellsior_${new Date().toISOString().split('T')[0]}_${isManual ? 'manual' : 'automatico'}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      console.log(`%cREPORTE ${type} DESCARGADO CORRECTAMENTE`, 'color: #10b981; font-weight: bold;');
-
-      this.showSuccessToast(
-        isManual
-          ? 'Reporte manual generado y descargado'
-          : 'Reporte diario automático generado y descargado'
-      );
-    },
-    error: (error) => {
-      console.error('Error al generar reporte', error);
-      this.showErrorToast('Error al generar el reporte');
-    }
-  });
-}
 
 
 generateAndSaveReport(isManual: boolean = false): void {
@@ -1854,6 +1729,19 @@ private buildReportPayload(enrichedClients: any[], periodType: 'DAILY' | 'MONTHL
 }
 
 
+trackByClientId(index: number, client: Client): any {
+  return client?.id ?? index;
+}
+
+trackBySubsueloStatId(index: number, stat: any): any {
+  return stat?.id ?? index;
+}
+
+trackByPageNumber(index: number, page: number): number {
+  return page;
+}
+
+
 
 //actualizacion
 
@@ -1957,79 +1845,6 @@ private buildMonthlyPayloadFromDailyReports(dailyReports: Report[], monthKey: st
   };
 }
 
-
-
-
-
-generateAndSaveMonthlyReport0(isManual: boolean = true): void {
-  const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';
-  console.log(`%cINICIANDO REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
-
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
-
-  const clientsForReport = Object.values(this.clients || {})
-    .filter(c => {
-      const ts = this.getClientEventTs(c);
-      return ts !== null && ts >= monthStart && ts < nextMonthStart;
-    })
-    .sort((a, b) => (this.getClientEventTs(b) || 0) - (this.getClientEventTs(a) || 0));
-
-  const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-  const runDateLabel = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-
-  console.log('[MENSUAL] mes actual:', monthLabel);
-  console.log('[MENSUAL] total servicios:', clientsForReport.length);
-
-  if (!clientsForReport.length) {
-    if (isManual) alert('No hay servicios del mes para generar reporte.');
-    return;
-  }
-
-  const enrichedClients = this.enrichClientsForReport(clientsForReport);
-  const periodKey = now.toISOString().slice(0, 7); // yyyy-MM
-  const reportData = this.buildReportPayload(enrichedClients, 'MONTHLY', periodKey);
-
-  console.log('[MENSUAL] payload reportData:', reportData);
-
-  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
-    next: (savedReport) => {
-      const detailHtml = this.autolavadoService.generateReportDetailHtml(
-        {
-          ...reportData,
-          id: savedReport.id,
-          timestamp: savedReport.timestamp,
-          subsueloStats: reportData.subsueloStats,
-          timeStats: reportData.timeStats,
-          filteredClients: reportData.filteredClients,
-          paymentAmounts: reportData.paymentAmounts,
-          totalCobrado: reportData.totalCobrado
-        } as Report,
-        {
-          periodLabel: 'Servicios del mes',
-          periodDateLabel: `${monthLabel} hasta ${runDateLabel}`
-        }
-      );
-
-      const blob = new Blob([detailHtml], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_mensual_exellsior_${periodKey}.html`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      this.showSuccessToast(`Reporte mensual generado (${monthLabel})`);
-    },
-    error: (error) => {
-      console.error('[MENSUAL] Error al generar reporte mensual', error);
-      this.showErrorToast('Error al generar el reporte mensual');
-    }
-  });
-}
 
 generateAndSaveMonthlyReport(isManual: boolean = true): void {
   const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';

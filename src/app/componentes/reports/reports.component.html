@@ -92,7 +92,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let stat of subsueloStats">
+              <tr *ngFor="let stat of subsueloStats; trackBy: trackBySubsueloStatId">
                 <td>{{stat.label}}</td>
                 <td>{{stat.total}}</td>
                 <td>
@@ -147,7 +147,7 @@
         </thead>
         <tbody>
           <!--tr *ngFor="let client of paginatedClients"-->
-            <tr *ngFor="let client of paginatedDailyClients"
+            <tr *ngFor="let client of paginatedDailyClients; trackBy: trackByClientId"
             [ngClass]="{'paid-row': isClientPaid(client)}"
 
             >
@@ -235,7 +235,9 @@
     <li class="page-item" [class.disabled]="currentPageDaily === 1">
       <a class="page-link" (click)="setPageDaily(currentPageDaily - 1)">Previous</a>
     </li>
-    <li class="page-item" *ngFor="let page of pageNumbersDaily" [class.active]="page === currentPageDaily">
+    <!--li class="page-item" *ngFor="let page of pageNumbersDaily" [class.active]="page === currentPageDaily"-->
+     <li class="page-item" *ngFor="let page of pageNumbersDaily; trackBy: trackByPageNumber" [class.active]="page === currentPageDaily">
+
       <a class="page-link" (click)="setPageDaily(page)">{{page}}</a>
     </li>
     <li class="page-item" [class.disabled]="currentPageDaily === totalPagesDaily">

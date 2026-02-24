@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, combineLatest, forkJoin, Observable, of } from 'rxjs';
-import { catchError, map, switchMap, tap } from 'rxjs/operators';
+import { catchError, finalize, map, switchMap, tap } from 'rxjs/operators';
 import { ClientVehicle, Report, VehicleType } from '../models/autolavado.model';
 
 // Interfaces
@@ -47,11 +47,7 @@ export interface Space {
 }
 
 
-/*export interface ClientVehicle {
-  vehicleType: VehicleType;
-  plate?: string;
-  notes?: string;
-}*/
+
 
 
 export interface ClientData {
@@ -101,31 +97,7 @@ export class AutolavadoService {
   public currentSubId$ = this.currentSubIdSubject.asObservable();
 
 
-public filteredClients$1 = combineLatest([this.clients$, this.searchTermSubject, this.spaces$]).pipe(
-  map(([clients, searchTerm, spaces]) => {
-    const term = searchTerm.trim().toLowerCase();
-    const filtered = Object.values(clients).filter(client => {
-      const space = spaces[client.spaceKey];
-      if (!space || !space.occupied) return false;
-      if (!term) return true;
-      return (
-        (client.name || '').toLowerCase().includes(term) ||
-        (client.code || '').toLowerCase().includes(term) ||
-        (client.spaceKey || '').toLowerCase().includes(term) ||
-        (client.phoneIntl || '').toLowerCase().includes(term) ||
-        (client.vehicle || '').toLowerCase().includes(term)
-      );
-    }).map(client => { // Enriquecer con displayName
-      const space = spaces[client.spaceKey];
-      return {
-        ...client,
-        spaceDisplayName: space ? (space.displayName || space.key) : client.spaceKey
-      } as any; // Type assertion para evitar error TS
-    });
-    console.log('Filtered Clients enriquecidos:', filtered); // Logging para depurar
-    return filtered;
-  })
-);
+
 
 
 public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject, this.spaces$]).pipe(
@@ -165,65 +137,7 @@ public filteredClients$ = combineLatest([this.clients$, this.searchTermSubject, 
   })
 );
 
-public dailyClients$0 = this.clients$.pipe(
-  map(clientsMap => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayTimestamp = todayStart.getTime();
 
-    const daily = Object.values(clientsMap)
-      .filter(client => {
-        const entry = client.entryTimestamp;
-        const isToday = entry && typeof entry === 'number' && entry >= todayTimestamp;
-        console.log(`Cliente ${client.id} - entryTimestamp: ${entry} - isToday: ${isToday}`);
-        return isToday;
-      })
-      .map(client => {
-        const space = this.spacesSubject.value[client.spaceKey || ''];
-        return {
-          ...client,
-          spaceDisplayName: space ? (space.displayName || client.spaceKey) : '-',
-          isCurrentlyOccupied: space ? space.occupied : false,
-          elapsedTime: client.entryTimestamp ? this.elapsedFrom(client.entryTimestamp) : 'N/A'
-        };
-      })
-      .sort((a, b) => (b.entryTimestamp || 0) - (a.entryTimestamp || 0));
-
-    console.log('Daily Clients del día:', daily.length, daily);
-    return daily;
-  })
-);
-
-public dailyClients$1 = this.clients$.pipe(
-  map(clientsMap => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayTimestamp = todayStart.getTime();
-
-    console.log('Calculando dailyClients para hoy:', new Date(todayTimestamp).toLocaleDateString());
-
-    const daily = Object.values(clientsMap)
-      .filter(client => {
-        const entry = client.entryTimestamp;
-        const isToday = entry && typeof entry === 'number' && entry >= todayTimestamp;
-        console.log(`Cliente ${client.id} - entryTimestamp: ${entry} (type: ${typeof entry}) - isToday: ${isToday}`);
-        return isToday;
-      })
-      .map(client => {
-        const space = this.spacesSubject.value[client.spaceKey || ''];
-        return {
-          ...client,
-          spaceDisplayName: space ? (space.displayName || client.spaceKey || '-') : '-',
-          isCurrentlyOccupied: space ? space.occupied : false,
-          elapsedTime: client.entryTimestamp ? this.elapsedFrom(client.entryTimestamp) : 'N/A'
-        };
-      })
-      .sort((a, b) => (b.entryTimestamp || 0) - (a.entryTimestamp || 0));
-
-    console.log('Daily Clients del día:', daily.length);
-    return daily;
-  })
-);
 
 
 public dailyClients$ = this.clients$.pipe(
@@ -292,18 +206,22 @@ public filteredDailyClients$ = combineLatest([
   })
 );
 
+private isInitializingFromBackend = false;
+private hasCompletedInitialBackendSync = false;
+
+
   constructor(private http: HttpClient) {
    this.loadAll();  // Carga desde localStorage
 
   // Si localStorage falló o está vacío → cargar desde backend como respaldo
-  if (
+ /* if (
     this.subsuelosSubject.value.length === 0 ||
     Object.keys(this.spacesSubject.value).length === 0 ||
     Object.keys(this.clientsSubject.value).length === 0
   ) {
     console.log('LocalStorage vacío o corrupto → cargando datos desde backend como respaldo');
     this.loadAllFromBackend();
-  }
+  }*/
 
     this.ensureAtLeastOneSubsuelo();
   }
@@ -380,12 +298,6 @@ saveSpaceToBackend(space: Space): Observable<Space> {
 
 
 
-// GUARDAR CLIENTE EN EL BACKEND (respaldo real)
-saveClientToBackend0(clientData: any): Observable<Client> {
-  return this.http.post<Client>(`${this.API_BASE}/clients`, clientData);
-}
-
-
 
 saveClientToBackend(data: { spaceKey: string; payload: any }): Observable<Client> {
   const { spaceKey, payload } = data;
@@ -424,6 +336,197 @@ initializeDataFromBackend(): void {
   });
 }
 
+
+
+
+
+initializeDataPreferBackend0(force: boolean = false): void {
+  if (this.isInitializingFromBackend) {
+    console.log('[INIT] Ya hay una inicialización en curso. Se omite llamada duplicada.');
+    return;
+  }
+
+  if (this.hasCompletedInitialBackendSync && !force) {
+    console.log('[INIT] Sync inicial con backend ya completado. Se omite (use force=true para recargar).');
+    return;
+  }
+
+  this.isInitializingFromBackend = true;
+  console.log('[INIT] Inicializando datos (backend primero, localStorage fallback)...');
+
+  this.loadSpacesFromBackend().pipe(
+    tap((spacesFromBackend: Space[]) => {
+      console.log('[INIT] Spaces desde backend:', spacesFromBackend.length, spacesFromBackend);
+    }),
+    switchMap((spacesFromBackend: Space[]) => {
+      const spacesMap: { [key: string]: Space } = {};
+      spacesFromBackend.forEach(s => spacesMap[s.key] = s);
+      this.spacesSubject.next(spacesMap);
+
+      return this.loadClientsFromBackend().pipe(
+        tap((clientsFromBackend: Client[]) => {
+          console.log('[INIT] Clients desde backend:', clientsFromBackend.length, clientsFromBackend);
+        }),
+        map((clientsFromBackend) => ({ spacesMap, clientsFromBackend }))
+      );
+    }),
+    tap(({ spacesMap, clientsFromBackend }) => {
+      const clientsMap: { [key: string]: Client } = {};
+      clientsFromBackend.forEach(c => clientsMap[c.id.toString()] = c);
+
+      console.log('[INIT] clientsMap armado:', Object.keys(clientsMap).length, clientsMap);
+
+      this.clientsSubject.next(clientsMap);
+
+      // Rehidratar relación space.client para la UI
+      Object.values(spacesMap).forEach(space => {
+        if (space.occupied && space.clientId && clientsMap[space.clientId]) {
+          space.client = clientsMap[space.clientId];
+        } else {
+          space.client = null;
+        }
+      });
+
+      console.log('[INIT] spacesMap rehidratado:', Object.keys(spacesMap).length, spacesMap);
+
+      this.spacesSubject.next({ ...spacesMap });
+      this.saveAll();
+
+      this.hasCompletedInitialBackendSync = true;
+
+      console.log('[INIT] Datos cargados desde backend y localStorage sincronizado');
+      console.log('[INIT] localStorage keys usadas:', this.LS_KEYS);
+    }),
+    catchError((err) => {
+      console.warn('[INIT] Backend no disponible. Usando localStorage como fallback.', err);
+      this.loadAll();
+      console.log('[INIT] Estado cargado desde localStorage (fallback):', {
+        subsuelos: this.subsuelosSubject.value,
+        spaces: this.spacesSubject.value,
+        clients: this.clientsSubject.value
+      });
+      return of(null);
+    })
+  ).subscribe({
+    complete: () => {
+      this.isInitializingFromBackend = false;
+    },
+    error: () => {
+      this.isInitializingFromBackend = false;
+    }
+  });
+}
+
+
+initializeDataPreferBackend(force: boolean = false): void {
+  if (this.isInitializingFromBackend) {
+    console.log('[INIT] Ya hay una inicialización en curso. Se omite llamada duplicada.');
+    return;
+  }
+
+  if (this.hasCompletedInitialBackendSync && !force) {
+    console.log('[INIT] Sync inicial con backend ya completado. Se omite (use force=true para recargar).');
+    return;
+  }
+
+  this.isInitializingFromBackend = true;
+  console.log('[INIT] Inicializando datos (backend primero, localStorage fallback)...', { force });
+
+  forkJoin({
+    subsuelosFromBackend: this.loadSubsuelosFromBackend(),
+    spacesFromBackend: this.loadSpacesFromBackend(),
+    clientsFromBackend: this.loadClientsFromBackend()
+  }).pipe(
+    tap(({ subsuelosFromBackend, spacesFromBackend, clientsFromBackend }) => {
+      console.log('[INIT] Respuesta backend', {
+        subsuelos: subsuelosFromBackend?.length || 0,
+        spaces: spacesFromBackend?.length || 0,
+        clients: clientsFromBackend?.length || 0
+      });
+    }),
+    tap(({ subsuelosFromBackend, spacesFromBackend, clientsFromBackend }) => {
+      // 1) Subsuelos
+      const subsuelos = [...(subsuelosFromBackend || [])];
+      this.subsuelosSubject.next(subsuelos);
+
+      // 2) Spaces -> mapa
+      const spacesMap: { [key: string]: Space } = {};
+      (spacesFromBackend || []).forEach(s => {
+        spacesMap[s.key] = s;
+      });
+
+      // 3) Clients -> mapa
+      const clientsMap: { [key: string]: Client } = {};
+      (clientsFromBackend || []).forEach(c => {
+        clientsMap[c.id.toString()] = c;
+      });
+
+      // 4) Rehidratar relación space.client para UI
+      Object.values(spacesMap).forEach(space => {
+        if (space.occupied && space.clientId && clientsMap[space.clientId]) {
+          space.client = clientsMap[space.clientId];
+        } else {
+          space.client = null;
+        }
+      });
+
+      // 5) Publicar estado
+      this.spacesSubject.next({ ...spacesMap });
+      this.clientsSubject.next({ ...clientsMap });
+
+      // 6) Asegurar currentSubId válido
+      const currentSubId = this.currentSubIdSubject.value;
+      const hasCurrent = !!currentSubId && subsuelos.some(s => s.id === currentSubId);
+
+      if (!hasCurrent) {
+        if (subsuelos.length > 0) {
+          this.currentSubIdSubject.next(subsuelos[0].id);
+        } else {
+          // Si backend no devuelve subsuelos, mantener estructura mínima local
+          this.ensureAtLeastOneSubsuelo();
+        }
+      }
+
+      // 7) Persistir cache local sincronizado
+      this.saveAll();
+
+      this.hasCompletedInitialBackendSync = true;
+
+      console.log('[INIT] Sync backend completado y localStorage actualizado', {
+        subsuelos: this.subsuelosSubject.value.length,
+        spaces: Object.keys(this.spacesSubject.value || {}).length,
+        clients: Object.keys(this.clientsSubject.value || {}).length,
+        currentSubId: this.currentSubIdSubject.value,
+        lsKeys: this.LS_KEYS
+      });
+    }),
+    catchError((err) => {
+      console.warn('[INIT] Backend no disponible. Usando localStorage como fallback.', err);
+
+      this.loadAll();
+
+      // Asegurar estructura mínima si local estaba vacío/corrupto
+      this.ensureAtLeastOneSubsuelo();
+
+      console.log('[INIT] Estado cargado desde localStorage (fallback)', {
+        subsuelos: this.subsuelosSubject.value.length,
+        spaces: Object.keys(this.spacesSubject.value || {}).length,
+        clients: Object.keys(this.clientsSubject.value || {}).length,
+        currentSubId: this.currentSubIdSubject.value
+      });
+
+      return of(null);
+    }),
+    finalize(() => {
+      this.isInitializingFromBackend = false;
+      console.log('[INIT] Fin initializeDataPreferBackend (flag liberado)');
+    })
+  ).subscribe();
+}
+
+
+
+
 reserveOrUpdateClient(data: {
   spaceKey: string;
   payload: any;
@@ -454,14 +557,7 @@ createVehicleType(vehicle: { model: string; category: string; price: number }): 
   return this.http.post<VehicleType>(`${this.API_BASE}/vehicle-types`, vehicle);
 }
 
-createVehicleType0(vehicleType: VehicleType): Observable<VehicleType> {
-  return this.http.post<VehicleType>(`${this.API_BASE}/vehicle-types`, vehicleType);
-}
 
-createVehicleType1(vehicleType: VehicleType): Observable<VehicleType> {
-  console.log('Enviando al backend:', vehicleType); // ← Log para ver qué se envía
-  return this.http.post<VehicleType>(`${this.API_BASE}/vehicle-types`, vehicleType);
-}
 
 
 // Opcional: Actualizar tipo de vehículo
@@ -522,9 +618,7 @@ getAllClientsFromBackend(): Observable<Client[]> {
   return this.http.get<Client[]>(`${this.API_BASE}/clients`);
 }
 
-deleteClientFromBackend0(clientId: number): Observable<void> {
-  return this.http.delete<void>(`${this.API_BASE}/clients/${clientId}`);
-}
+
 
 deleteClientFromBackend(clientId: number): Observable<any> {
   console.log('Eliminando cliente ID:', clientId, 'del backend');
@@ -635,33 +729,7 @@ loadAll(): void {
 
 
 
-  addSubsuelo0(): void {
-  const subsuelos = this.subsuelosSubject.value;
-  // Calcular máximo ID existente
-  let maxNum = 0;
-  subsuelos.forEach(sub => {
-    const numMatch = sub.id.match(/^SUB(\d+)$/);
-    if (numMatch) {
-      const num = parseInt(numMatch[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  });
-  const nextNum = maxNum + 1;
-  const id = `SUB${nextNum}`;
-  const newSub: Subsuelo = { id, label: `Subsuelo ${nextNum}` };
-  const spaces = this.spacesSubject.value;
 
-  this.createSpacesForSubsuelo(id, 5, spaces);
-
-  this.subsuelosSubject.next([...subsuelos, newSub]);
-  this.spacesSubject.next({ ...spaces });
-  this.currentSubIdSubject.next(id);
-  this.saveAll();
-
-  // Logging para depurar
-  console.log('Nuevo subsuelo creado:', newSub);
-  console.log('Subsuelos actuales:', this.subsuelosSubject.value);
-}
 
 addSubsuelo(): void {
   const subsuelos = this.subsuelosSubject.value;
@@ -723,21 +791,7 @@ addSubsuelo(): void {
 
 
 
-private createSpacesForSubsuelo0(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
-  for (let i = 1; i <= count; i++) {
-    const key = this.formatSpaceCode(subsueloId, i);
-    spaces[key] = {
-      key,
-      subsueloId,
-      occupied: false,
-      hold: false,
-      clientId: null,
-      startTime: null,
-      client: null,
-      displayName: `Nombre ${i}` // Por defecto 'Nombre'
-    };
-  }
-}
+
 
 private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [key: string]: Space }): void {
   for (let i = 1; i <= count; i++) {
@@ -760,15 +814,7 @@ private createSpacesForSubsuelo(subsueloId: string, count: number, spaces: { [ke
 
 
 
-updateSubsuelo0(id: string, newLabel: string): void {
-  const subsuelos = this.subsuelosSubject.value;
-  const index = subsuelos.findIndex(sub => sub.id === id);
-  if (index === -1) throw new Error('Subsuelo no encontrado');
 
-  subsuelos[index].label = newLabel.trim();
-  this.subsuelosSubject.next([...subsuelos]);
-  this.saveAll();
-}
 
 updateSubsuelo(id: string, newLabel: string): void {
   const subsuelos = this.subsuelosSubject.value;
@@ -798,36 +844,7 @@ updateSubsuelo(id: string, newLabel: string): void {
   });
 }
 
-addSpacesToCurrent0(count: number): void {
-  const currentSubId = this.currentSubIdSubject.value;
-  if (!currentSubId) return;
 
-  const spaces = this.spacesSubject.value;
-  const existingKeys = Object.keys(spaces)
-    .filter(k => spaces[k].subsueloId === currentSubId)
-    .map(k => Number(k.split('-')[1]))
-    .sort((a, b) => a - b);
-
-  const start = existingKeys.length ? existingKeys[existingKeys.length - 1] : 0;
-
-  for (let i = 1; i <= count; i++) {
-    const n = start + i;
-    const key = this.formatSpaceCode(currentSubId, n);
-    spaces[key] = {
-      key,
-      subsueloId: currentSubId,
-      occupied: false,
-      hold: false,
-      clientId: null,
-      startTime: null,
-      client: null,
-      displayName: `Nombre ${n}` // Por defecto 'Nombre'
-    };
-  }
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
 
 addSpacesToCurrent(count: number): void {
   const currentSubId = this.currentSubIdSubject.value;
@@ -889,212 +906,9 @@ addSpacesToCurrent(count: number): void {
 
 
 
-saveClient0(clientData: ClientData, spaceKey: string): Client {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-  if (!space) throw new Error('Espacio no encontrado');
-  if (space.occupied) throw new Error('El espacio ya está ocupado');
-
-  const id = this.generateClientId();
-  const code = id.toUpperCase();
-  const phoneIntl = this.toPhoneAR(clientData.phone);
-
-  const client: Client = {
-    id,
-    code,
-    name: clientData.name.trim(),
-    phoneIntl,
-    phoneRaw: clientData.phone.trim(),
-    vehicle: clientData.vehicle?.trim() || '',
-    plate: clientData.plate?.trim() || '',
-    notes: clientData.notes?.trim() || '',
-    spaceKey,
-    qrText: ''
-  };
-
-  space.occupied = true;
-  space.clientId = id;
-  space.startTime = Date.now();
-  space.hold = false;
-  space.client = client; // Asignar objeto completo del cliente
-
-  client.qrText = this.buildQRText(client, space);
-  clients[id] = client;
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({ ...clients });
-  this.saveAll();
-
-  return client;
-}
-
-saveClient1(clientData: any, spaceKey: string): Client {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-
-  if (!space) throw new Error('Espacio no encontrado');
-  if (space.occupied) throw new Error('El espacio ya está ocupado');
-
-  const id = this.generateClientId();
-  const code = id.toUpperCase();
-  const phoneIntl = this.toPhoneAR(clientData.phone);
-
-  // === NUEVO: Usar category y price del clientData (con fallback) ===
-  const category = clientData.category || 'AUTO';
-  const price = clientData.price && clientData.price > 0 ? clientData.price : 35000;
-
-  const client: Client = {
-    id,
-    code,
-    name: clientData.name.trim(),
-    phoneIntl,
-    phoneRaw: clientData.phone.trim(),
-    vehicle: clientData.vehicle?.trim() || '',
-    plate: clientData.plate?.trim() || '',
-    notes: clientData.notes?.trim() || '',
-    spaceKey,
-    qrText: '',
-    category,   // ← GUARDADO
-    price       // ← GUARDADO
-  };
-
-  // Asignar al espacio
-  space.occupied = true;
-  space.clientId = id;
-  space.startTime = Date.now();
-  space.hold = false;
-  space.client = client;
-
-  // Generar QR
-  client.qrText = this.buildQRText(client, space);
-
-  // Guardar en clients
-  clients[id] = client;
-
-  // Emitir cambios
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({ ...clients });
-  this.saveAll();
-
-  return client;
-}
 
 
-saveClient01(clientData: any, spaceKey: string): Client {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-
-  if (!space) throw new Error('Espacio no encontrado');
-  if (space.occupied) throw new Error('El espacio ya está ocupado');
-
-  // GENERAR SOLO CODE (no id)
-  const code = this.generateClientCode();  // Nuevo método para code
-
-  const phoneIntl = this.toPhoneAR(clientData.phone);
-
-  const category = clientData.category || 'AUTO';
-  const price = clientData.price && clientData.price > 0 ? clientData.price : 35000;
-
-  // ID TEMPORAL para local (para poder referenciarlo antes de la respuesta del backend)
-  const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-
-  const client: Client = {
-    id: tempId,  // Temporal
-    code,
-    dni: clientData.dni?.trim() || '',
-    name: clientData.name.trim(),
-    phoneIntl,
-    phoneRaw: clientData.phone.trim(),
-    vehicle: clientData.vehicle?.trim() || '',
-    plate: clientData.plate?.trim() || '',
-    notes: clientData.notes?.trim() || '',
-    spaceKey,
-    qrText: '',
-    category,
-    price
-  };
-
-  // Asignar al espacio (usa tempId)
-  space.occupied = true;
-  space.clientId = tempId;
-  space.startTime = Date.now();
-  space.hold = false;
-  space.client = client;
-
-  // Generar QR con code
-  client.qrText = this.buildQRText(client, space);
-
-  // Guardar localmente con tempId
-  clients[tempId] = client;
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({ ...clients });
-  this.saveAll();
-
-  return client;
-}
-
-
-saveClient00(clientData: any, spaceKey: string): Client {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const targetSpace = spaces[spaceKey];
-
-  if (!targetSpace) throw new Error('Espacio no encontrado');
-  if (targetSpace.occupied) throw new Error('El espacio ya está ocupado');
-
-  // GENERAR SOLO CODE
-  const code = this.generateClientCode();
-
-  const phoneIntl = this.toPhoneAR(clientData.phone);
-
-  const category = clientData.category || 'AUTO';
-  const price = clientData.price && clientData.price > 0 ? clientData.price : 35000;
-
-  // ID TEMPORAL para local
-  const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-
-  const client: Client = {
-    id: tempId,
-    code,
-    dni: clientData.dni?.trim() || '',
-    name: clientData.name.trim(),
-    phoneIntl,
-    phoneRaw: clientData.phone.trim(),
-    vehicle: clientData.vehicle?.trim() || '',
-    plate: clientData.plate?.trim() || '',
-    notes: clientData.notes?.trim() || '',
-    spaceKey,
-    qrText: '',
-    category,
-    price,
-    entryTimestamp: Date.now()
-  };
-
-  // Asignar al espacio
-  targetSpace.occupied = true;
-  targetSpace.clientId = tempId;
-  targetSpace.startTime = Date.now();
-  targetSpace.hold = false;
-  targetSpace.client = client;
-
-  // Generar QR
-  client.qrText = this.buildQRText(client, targetSpace);
-
-  // Guardar localmente
-  clients[tempId] = client;
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({ ...clients });
-  this.saveAll();
-
-  return client;
-}
-
-saveClient(clientData: any, spaceKey: string): Client {
+saveClient0(clientData: any, spaceKey: string): Client {
   const spaces = this.spacesSubject.value;
   const clients = this.clientsSubject.value;
   const targetSpace = spaces[spaceKey];
@@ -1165,34 +979,94 @@ saveClient(clientData: any, spaceKey: string): Client {
   return client;
 }
 
+saveClient(clientData: any, spaceKey: string): Client {
+  const currentSpaces = this.spacesSubject.value;
+  const currentClients = this.clientsSubject.value;
+  const targetSpace = currentSpaces[spaceKey];
 
+  console.log('[AutolavadoService.saveClient] Inicio', {
+    spaceKey,
+    clientData,
+    spacesCount: Object.keys(currentSpaces || {}).length,
+    clientsCount: Object.keys(currentClients || {}).length
+  });
 
+  if (!targetSpace) {
+    throw new Error('Espacio no encontrado');
+  }
 
+  if (targetSpace.occupied) {
+    throw new Error('El espacio ya está ocupado');
+  }
 
+  // Generar código local
+  const code = this.generateClientCode();
 
+  // Teléfono: usar lo que el usuario escribió, limpiar caracteres inválidos
+  let phoneIntl = (clientData.phone || '').toString().trim();
+  phoneIntl = phoneIntl.replace(/[^0-9+]/g, '');
 
-addManualClient0(clientData: any): Observable<Client> {
-  const url = `${this.API_BASE}/clients`;
+  const digitsOnly = phoneIntl.replace(/[^0-9]/g, '');
+  if (digitsOnly.length < 8 || digitsOnly.length > 15) {
+    throw new Error('Número de teléfono inválido (debe tener entre 8 y 15 dígitos)');
+  }
 
-  const cleanData = {
-    name: clientData.name,
-    dni: clientData.dni || null,
-    phoneIntl: clientData.phoneIntl || null,
-    vehicle: clientData.vehicle || null,
-    plate: clientData.plate || null,
-    category: clientData.category || null,
-    price: clientData.price || null,
-    //vehicleTypes: clientData.vehicleTypes || [], // NUEVO
-    clientVehicles: clientData.clientVehicles || [],
-    // NUNCA enviamos estos
-    spaceKey: null,
-    entryTimestamp: null,
-    exitTimestamp: null,
-    code: null
+  const category = clientData.category || 'AUTO';
+  const price = clientData.price && Number(clientData.price) > 0 ? Number(clientData.price) : 35000;
+
+  // ID temporal local
+  const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+  const client: Client = {
+    id: tempId,
+    code,
+    dni: (clientData.dni || '').toString().trim(),
+    name: (clientData.name || '').toString().trim(),
+    phoneIntl,
+    phoneRaw: (clientData.phone || '').toString().trim(),
+    vehicle: (clientData.vehicle || '').toString().trim(),
+    plate: (clientData.plate || '').toString().trim(),
+    notes: (clientData.notes || '').toString().trim(),
+    spaceKey,
+    qrText: '',
+    category,
+    price,
+    entryTimestamp: Date.now()
   };
 
-  return this.http.post<Client>(url, cleanData);
+  // Clonar estructura para evitar mutaciones inesperadas sobre referencias compartidas
+  const nextSpaces = { ...currentSpaces };
+  const nextClients = { ...currentClients };
+
+  const nextSpace: Space = {
+    ...targetSpace,
+    occupied: true,
+    clientId: tempId,
+    startTime: Date.now(),
+    hold: false,
+    client: client
+  };
+
+  // Generar QR con el espacio resultante
+  client.qrText = this.buildQRText(client, nextSpace);
+
+  nextSpaces[spaceKey] = nextSpace;
+  nextClients[tempId] = client;
+
+  this.spacesSubject.next(nextSpaces);
+  this.clientsSubject.next(nextClients);
+  this.saveAll();
+
+  console.log('[AutolavadoService.saveClient] Guardado local optimista OK', {
+    tempId,
+    spaceKey,
+    client,
+    nextSpace
+  });
+
+  return client;
 }
+
 
 
 addManualClient(clientData: any): Observable<Client> {
@@ -1217,67 +1091,8 @@ addManualClient(clientData: any): Observable<Client> {
 }
 
 
-private saveToLocalStorage(key: string, data: any): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-    console.log(`Sync local for ${key}`);
-  } catch (error) {
-    console.error('Error saving to localStorage', error);
-  }
-}
 
 
-releaseSpace0(spaceKey: string): void {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-  if (!space) return;
-
-  // Eliminar cliente asociado
-  if (space.clientId) {
-    delete clients[space.clientId];
-    this.clientsSubject.next({ ...clients });
-  }
-
-  space.occupied = false;
-  space.clientId = null;
-  space.startTime = null;
-  space.hold = false;
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
-
-
-releaseSpace1(spaceKey: string): void {
-  const spaces = this.spacesSubject.value;
-  const clients = this.clientsSubject.value;
-  const space = spaces[spaceKey];
-  if (!space) return;
-
-  // Eliminar cliente local
-  if (space.clientId) {
-    delete clients[space.clientId];
-    this.clientsSubject.next({ ...clients });
-  }
-
-  // Liberar espacio local
-  space.occupied = false;
-  space.clientId = null;
-  space.startTime = null;
-  space.hold = false;
-  space.client = null;
-
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-
-  // LIBERAR EN BACKEND
-  this.releaseSpaceInBackend(spaceKey).subscribe({
-    next: () => console.log('Espacio liberado en backend'),
-    error: (err) => console.warn('Error liberando en backend (funciona offline)', err)
-  });
-}
 
 releaseSpace(spaceKey: string): Observable<any> {
   const spaces = this.spacesSubject.value;
@@ -1289,26 +1104,21 @@ releaseSpace(spaceKey: string): Observable<any> {
     return of(null);
   }
 
+  // Snapshot para rollback si backend falla
+  const spacesBefore = JSON.parse(JSON.stringify(spaces)) as { [key: string]: Space };
+  const clientsBefore = JSON.parse(JSON.stringify(clients)) as { [key: string]: Client };
+
   const clientId = space.clientId;
 
-  // 1. Liberar localmente
- /* if (clientId) {
-    delete clients[clientId];
-    this.clientsSubject.next({ ...clients });
-  }*/
-
+  // 1) Actualización local optimista
   if (clientId) {
     const client = clients[clientId];
     if (client) {
-      //client.spaceKey = null;
-      client.exitTimestamp = Date.now();  // ← REGISTRAR SALIDA
-      // NO limpiar price, vehicle, etc.
+      client.exitTimestamp = Date.now();
+      // No limpiar otros datos: se preserva histórico local temporal
     }
-
     this.clientsSubject.next({ ...clients });
   }
-
-
 
   space.occupied = false;
   space.clientId = null;
@@ -1317,54 +1127,64 @@ releaseSpace(spaceKey: string): Observable<any> {
   space.client = null;
 
   this.spacesSubject.next({ ...spaces });
-  this.saveAll();  // Guarda estado liberado temporalmente
+  this.saveAll();
 
   console.log('Espacio liberado localmente:', spaceKey);
 
-  // 2. Liberar en backend
+  // 2) Confirmar en backend y recargar estado real
   return this.releaseSpaceInBackend(spaceKey).pipe(
     switchMap(() => {
-      console.log('Espacio liberado en backend. Recargando datos frescos...');
+      console.log('Espacio liberado en backend. Recargando estado real...');
 
-      if (clientId) {
-        // Recargar el cliente actualizado desde backend
-        return this.getClientFromBackend(clientId).pipe(
-          tap((updatedClient: Client) => {
-            // Actualizar cliente en el mapa (con datos limpios del backend)
-            const updatedClientsMap = this.clientsSubject.value;
-            updatedClientsMap[updatedClient.id.toString()] = updatedClient;
-            this.clientsSubject.next({ ...updatedClientsMap });
-            console.log('Cliente recargado y actualizado en local:', updatedClient);
-            this.clientsSubject.next({ ...this.clientsSubject.value });
+      const spaces$ = this.loadSpacesFromBackend();
+      const client$ = clientId ? this.getClientFromBackend(clientId) : of(null);
 
-            console.log('Cliente recargado y dailyClients$ forzado a recalcular');
-          })
-        );
-      } else {
-        return of(null);  // No había cliente
+      return forkJoin({
+        spacesFromBackend: spaces$,
+        updatedClient: client$
+      });
+    }),
+    tap(({ spacesFromBackend, updatedClient }) => {
+      // Rehidratar spaces desde backend
+      const spacesMap: { [key: string]: Space } = {};
+      spacesFromBackend.forEach(s => {
+        spacesMap[s.key] = s;
+      });
+      this.spacesSubject.next(spacesMap);
+
+      // Actualizar cliente liberado con versión real backend
+      if (updatedClient) {
+        const currentClients = { ...this.clientsSubject.value };
+        currentClients[updatedClient.id.toString()] = updatedClient;
+        this.clientsSubject.next(currentClients);
       }
+
+      // Mantener referencias space.client si las usas en UI
+      const currentClients = this.clientsSubject.value;
+      Object.values(spacesMap).forEach(sp => {
+        if (sp.occupied && sp.clientId && currentClients[sp.clientId]) {
+          sp.client = currentClients[sp.clientId];
+        } else {
+          sp.client = null;
+        }
+      });
+      this.spacesSubject.next({ ...spacesMap });
+
+      this.saveAll();
+      console.log('localStorage actualizado con datos reales del backend después de liberar espacio');
     }),
-    tap(() => {
-      // Recargar espacios desde backend para máxima consistencia
-      return this.loadSpacesFromBackend().pipe(
-        tap((spacesFromBackend: Space[]) => {
-          const spacesMap: { [key: string]: Space } = {};
-          spacesFromBackend.forEach(s => spacesMap[s.key] = s);
-          this.spacesSubject.next(spacesMap);
-        })
-      ).subscribe();
-    }),
-    tap(() => {
-      this.saveAll();  // Guardar en localStorage los datos REALES del backend
-      console.log('localStorage actualizado con datos frescos después de liberar espacio');
+    catchError((err) => {
+      console.error('Error liberando espacio en backend. Rollback local aplicado.', err);
+
+      // Rollback del estado local
+      this.spacesSubject.next(spacesBefore);
+      this.clientsSubject.next(clientsBefore);
+      this.saveAll();
+
+      throw err;
     })
   );
 }
-
-
-
-
-
 
 
 
@@ -1383,129 +1203,21 @@ searchClientByDni(dni: string): Observable<Client | null> {
   );
 }
 
-resetData0(): void {
-  const spaces = this.spacesSubject.value;
-  Object.values(spaces).forEach(space => {
-    space.occupied = false;
-    space.clientId = null;
-    space.startTime = null;
-    space.hold = false;
-  });
 
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({});
-  this.saveAll();
-}
 
-resetData1(): void {
-  const spaces = this.spacesSubject.value;
 
-  // Liberar espacios localmente
-  Object.values(spaces).forEach(space => {
-    space.occupied = false;
-    space.clientId = null;
-    space.startTime = null;
-    space.hold = false;
-    space.client = null;
-  });
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({});
-  this.saveAll();
-
-  // RESET EN BACKEND
-  this.resetDataInBackend().subscribe({
-    next: () => console.log('Datos reseteados en backend'),
-    error: (err) => console.warn('Error reseteando en backend (funciona offline)', err)
-  });
-}
-
-resetData2(): any {
-  const spaces = this.spacesSubject.value;
-
-  console.log('Limpiando datos localmente...');
-
-  // Liberar todos los espacios localmente
-  Object.values(spaces).forEach(space => {
-    space.occupied = false;
-    space.clientId = null;
-    space.startTime = null;
-    space.hold = false;
-    space.client = null;
-  });
-
-  this.spacesSubject.next({ ...spaces });
-  this.clientsSubject.next({});
-  this.saveAll();
-
-  console.log('Datos locales limpiados');
-
-  // LIMPIAR EN BACKEND
-  this.resetDataInBackend().subscribe({
-    next: () => console.log('Todo limpiado en backend'),
-    error: (err) => console.warn('Error limpiando backend (funciona offline)', err)
-  });
-}
-
-resetData00(): Observable<any> {
-  const spaces = this.spacesSubject.value;
-
-  console.log('Cerrando día: liberando espacios localmente...');
-
-  // 1. Liberar espacios localmente
-  Object.values(spaces).forEach(space => {
-    space.occupied = false;
-    space.clientId = null;
-    space.startTime = null;
-    space.hold = false;
-    space.client = null;
-  });
-
-  this.spacesSubject.next({ ...spaces });
-
-  // 2. Limpiar clientes locales (tabla queda vacía)
-  this.clientsSubject.next({});
-
-  this.saveAll();  // Guarda estado limpio en localStorage temporalmente
-
-  console.log('Espacios liberados y clientes limpiados localmente');
-
-  // 3. Liberar en backend y recargar TODO
-  return this.resetDataInBackend().pipe(
-    switchMap(() => {
-      console.log('Backend confirmado. Recargando espacios y clientes frescos...');
-
-      // Recargar espacios
-      return this.loadSpacesFromBackend().pipe(
-        switchMap((spacesFromBackend: Space[]) => {
-          const spacesMap: { [key: string]: Space } = {};
-          spacesFromBackend.forEach(s => spacesMap[s.key] = s);
-          this.spacesSubject.next(spacesMap);
-
-          // Recargar clientes
-          return this.loadClientsFromBackend();
-        }),
-        tap((clientsFromBackend: Client[]) => {
-          const clientsMap: { [key: string]: Client } = {};
-          clientsFromBackend.forEach(c => clientsMap[c.id.toString()] = c);
-          this.clientsSubject.next(clientsMap);
-
-          // Guardar en localStorage los datos REALES del backend
-          this.saveAll();
-
-          console.log('localStorage actualizado con datos frescos del backend (espacios libres + clientes históricos)');
-        })
-      );
-    })
-  );
-}
 
 resetData(): Observable<any> {
   const spaces = this.spacesSubject.value;
+  const clients = this.clientsSubject.value;
 
-  console.log('Cerrando día: liberando espacios localmente...');
+  // Snapshot para rollback si backend falla
+  const spacesBefore = JSON.parse(JSON.stringify(spaces)) as { [key: string]: Space };
+  const clientsBefore = JSON.parse(JSON.stringify(clients)) as { [key: string]: Client };
 
-  // 1. Liberar espacios localmente
+  console.log('[RESET] Cerrando día: liberando espacios localmente...');
+
+  // 1. Liberar espacios localmente (optimista)
   Object.values(spaces).forEach(space => {
     space.occupied = false;
     space.clientId = null;
@@ -1516,51 +1228,67 @@ resetData(): Observable<any> {
 
   this.spacesSubject.next({ ...spaces });
 
-  // 2. NO limpiar clientes completamente (solo limpiar spaceKey localmente)
-  const clients = this.clientsSubject.value;
+  // 2. Mantener historial de clientes, pero limpiar relación activa local
   Object.values(clients).forEach(client => {
-    client.spaceKey = null;  // ← SOLO esto
+    client.spaceKey = null;
     client.entryTimestamp = null;
-    // NO borrar el resto de propiedades
+    // NO borrar vehicle/plate/notes/payment/etc
   });
 
   this.clientsSubject.next({ ...clients });
 
-  this.saveAll();  // Guarda estado limpio en localStorage temporalmente
+  // Persistir estado local temporal
+  this.saveAll();
+  console.log('[RESET] Estado local limpiado temporalmente. Confirmando en backend...');
 
-  console.log('Espacios liberados y spaceKey reseteado en clientes localmente');
-
-  // 3. Liberar en backend y recargar TODO
+  // 3. Confirmar en backend y recargar todo fresco
   return this.resetDataInBackend().pipe(
     switchMap(() => {
-      console.log('Backend confirmado. Recargando espacios y clientes frescos...');
+      console.log('[RESET] Backend confirmado. Recargando espacios y clientes frescos...');
 
-      // Recargar espacios
-      return this.loadSpacesFromBackend().pipe(
-        switchMap((spacesFromBackend: Space[]) => {
-          const spacesMap: { [key: string]: Space } = {};
-          spacesFromBackend.forEach(s => spacesMap[s.key] = s);
-          this.spacesSubject.next(spacesMap);
+      return forkJoin({
+        spacesFromBackend: this.loadSpacesFromBackend(),
+        clientsFromBackend: this.loadClientsFromBackend()
+      });
+    }),
+    tap(({ spacesFromBackend, clientsFromBackend }) => {
+      const spacesMap: { [key: string]: Space } = {};
+      spacesFromBackend.forEach(s => spacesMap[s.key] = s);
 
-          // Recargar clientes (ya vienen con spaceKey = null)
-          return this.loadClientsFromBackend();
-        }),
-        tap((clientsFromBackend: Client[]) => {
-          const clientsMap: { [key: string]: Client } = {};
-          clientsFromBackend.forEach(c => clientsMap[c.id.toString()] = c);
-          this.clientsSubject.next(clientsMap);
+      const clientsMap: { [key: string]: Client } = {};
+      clientsFromBackend.forEach(c => clientsMap[c.id.toString()] = c);
 
-          // Guardar en localStorage los datos REALES del backend
-          this.saveAll();
+      // Rehidratar relación space.client
+      Object.values(spacesMap).forEach(space => {
+        if (space.occupied && space.clientId && clientsMap[space.clientId]) {
+          space.client = clientsMap[space.clientId];
+        } else {
+          space.client = null;
+        }
+      });
 
-          console.log('localStorage actualizado con datos frescos del backend');
-        })
-      );
+      this.spacesSubject.next({ ...spacesMap });
+      this.clientsSubject.next({ ...clientsMap });
+      this.saveAll();
+
+      console.log('[RESET] localStorage actualizado con datos reales del backend');
+      console.log('[RESET] Resumen:', {
+        spaces: Object.keys(spacesMap).length,
+        clients: Object.keys(clientsMap).length
+      });
+    }),
+    catchError((err) => {
+      console.error('[RESET] Error en backend. Aplicando rollback local...', err);
+
+      // Rollback del estado local
+      this.spacesSubject.next(spacesBefore);
+      this.clientsSubject.next(clientsBefore);
+      this.saveAll();
+
+      throw err;
     })
   );
 }
-
-
 
 
 
@@ -1570,9 +1298,7 @@ resetData(): Observable<any> {
   }
 
   // Utilidades
-  private generateClientId(): string {
-    return `C-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
-  }
+
 
   private generateClientCode(): string {
   return `C-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36).toUpperCase()}`;
@@ -1582,9 +1308,7 @@ resetData(): Observable<any> {
     return String(n).padStart(3, '0');
   }
 
-  private formatSpaceCode0(subId: string, idx: number): string {
-    return `${subId}-${this.padNumber(idx)}`;
-  }
+
 
   private formatSpaceCode(subId: string, idx: number): string {
   return `${subId}-${String(idx).padStart(3, '0')}`; // Mantiene numérico para agregar, pero permite edición libre
@@ -1592,15 +1316,6 @@ resetData(): Observable<any> {
 
 
 
-  elapsedFrom0(ts: number | null | undefined): string {
-    if (!ts) return '';
-    const ms = Date.now() - Number(ts);
-    if (ms < 0) return '0m';
-    const m = Math.floor(ms / 60000);
-    const h = Math.floor(m / 60);
-    const mm = m % 60;
-    return h > 0 ? `${h}h ${mm}m` : `${mm}m`;
-  }
 
   elapsedFrom(ts: number | string | null | undefined): string {
   // Si no hay timestamp o es inválido → vacío
@@ -1643,21 +1358,7 @@ resetData(): Observable<any> {
     });
   }
 
-  buildWhatsAppLink1(client: Client, space: Space): string {
-    const phone = client.phoneIntl;
-    const msg = `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en el autolavado:\n• Código cliente: ${client.code} 🔑\n• Espacio: ${space.key} (${space.subsueloId}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
-    const text = encodeURIComponent(msg);
-    return `whatsapp://send?phone=${phone}&text=${text}`;
-  }
 
-  buildWhatsAppLink00(client: Client, space: Space): string {
-  const phone = client.phoneIntl; // Debe estar en formato 549XXXXXXXXXX
-  const msg = `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en excellsior:\n• Código cliente: ${client.code} 🔑\n• Espacio: ${space.key} (${space.subsueloId}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
-  const text = encodeURIComponent(msg);
-
-  // Usar wa.me en lugar de whatsapp://send
-  return `https://wa.me/${phone}?text=${text}`;
-}
 
 buildWhatsAppLink(client: Client, space: Space): string {
   const phone = client.phoneIntl;
@@ -1667,17 +1368,10 @@ buildWhatsAppLink(client: Client, space: Space): string {
   return `whatsapp://send?phone=${phone}&text=${encoded}`;
 }
 
-buildWhatsAppLink2(client: Client): string {
-  return `https://wa.me/${client.phoneIntl}`;
-}
 
 
-buildWhatsAppMessage0(client: Client, space: Space): string {
- //return `Hola ${client.name}!\n\nDatos de tu estadía en el autolavado:\n- Código cliente: ${client.code}\n- Espacio: ${space.key} (${space.subsueloId})\n- Ingreso: ${new Date(space.startTime!).toLocaleString()}\n\nMostrá este QR al personal.`;
- return `¡Hola ${client.name}! 🚗\n\nDatos de tu estadía en exellssior:\n• Código cliente: ${client.code} estarás ocupando el🔑\n• Espacio: ${space.displayName} ubicado en el subsuelo:(${space.displayName}) 📍\n• Ingreso: ${new Date(space.startTime!).toLocaleString()} 🕒\n\nMostrá este QR al personal. 📱`;
 
 
-}
 
 buildWhatsAppMessage(client: Client, space: Space): string {
   const nombre = client.name.trim();
@@ -1712,65 +1406,7 @@ Muchas gracias por confiar en Exellssior. 🚗✨`;
 
 
 
-// En autolavado.service.ts
-buildWhatsAppLink0(client: Client, space: Space): string {
-  // Limpiar el número: solo dígitos
-  const cleanPhone = client.phoneIntl.replace(/\D/g, '');
 
-  // Verificar que tenga el formato correcto (54 + código de área + número)
-  if (!cleanPhone.startsWith('54')) {
-    console.error('Número sin código de país correcto:', cleanPhone);
-  }
-
-  // Mensaje sin emojis para mayor compatibilidad
-  const msg = `Hola ${client.name}!
-
-Datos de tu estadia en el autolavado:
-- Codigo cliente: ${client.code}
-- Espacio: ${space.key} (${space.subsueloId})
-- Ingreso: ${new Date(space.startTime!).toLocaleString('es-AR')}
-
-Mostra este QR al personal.`;
-
-  // Codificar mensaje
-  const text = encodeURIComponent(msg);
-
-  // Usar wa.me que funciona en web y móvil
-  return `https://wa.me/${cleanPhone}?text=${text}`;
-}
-
-// Método mejorado para formatear teléfono argentino
-toPhoneAR0(phone: string): string {
-  // Remover todos los caracteres no numéricos
-  const digits = phone.replace(/\D/g, '');
-
-  // Remover el 0 y 15 si están al inicio
-  let cleaned = digits;
-  if (cleaned.startsWith('0')) {
-    cleaned = cleaned.substring(1);
-  }
-  if (cleaned.startsWith('15')) {
-    cleaned = cleaned.substring(2);
-  }
-
-  // Agregar código de país 54
-  return `54${cleaned}`;
-}
-
-  toPhoneAR1(input: string): string {
-    if (!input) return '';
-    let s = input.replace(/[^0-9+]/g, '');
-    s = s.replace(/^\+/, '');
-    if (s.startsWith('54')) s = s.slice(2);
-    s = s.replace(/^0+/, '');
-    s = s.replace(/^15/, '');
-    const result = `54${s}`;
-    // Validar longitud (por ejemplo, +54 y 10 dígitos para móvil)
-    if (result.length < 12 || result.length > 13) {
-      throw new Error('Número de teléfono inválido');
-    }
-    return result;
-  }
 
   toPhoneAR(input: string): string {
   if (!input) return '';
@@ -1814,17 +1450,6 @@ toPhoneAR0(phone: string): string {
   }
 
 
-    deleteSpace0(spaceKey: string): void {
-    const spaces = this.spacesSubject.value;
-    const space = spaces[spaceKey];
-    if (!space) return;
-    if (space.occupied) throw new Error('No se puede eliminar un espacio ocupado');
-
-
-    delete spaces[spaceKey];
-    this.spacesSubject.next({ ...spaces });
-    this.saveAll();
-  }
 
   deleteSpace(spaceKey: string): void {
   const spaces = this.spacesSubject.value;
@@ -1859,41 +1484,7 @@ toPhoneAR0(phone: string): string {
   });
 }
 
-  deleteSubsuelo0(subsueloId: string): void {
-  const subsuelos = this.subsuelosSubject.value;
-  const spaces = this.spacesSubject.value;
 
-  // Verificar si hay espacios ocupados en el subsuelo
-  const hasOccupiedSpaces = Object.values(spaces)
-    .some(space => space.subsueloId === subsueloId && space.occupied);
-  if (hasOccupiedSpaces) {
-    throw new Error('No se puede eliminar el subsuelo porque tiene espacios ocupados');
-  }
-
-  // Verificar que no sea el último subsuelo
-  if (subsuelos.length <= 1) {
-    throw new Error('No se puede eliminar el único subsuelo');
-  }
-
-  // Eliminar todos los espacios del subsuelo
-  Object.keys(spaces)
-    .filter(key => spaces[key].subsueloId === subsueloId)
-    .forEach(key => delete spaces[key]);
-
-  // Eliminar el subsuelo
-  const updatedSubsuelos = subsuelos.filter(sub => sub.id !== subsueloId);
-
-  // Actualizar el subsuelo actual si era el eliminado
-  const currentSubId = this.currentSubIdSubject.value;
-  if (currentSubId === subsueloId) {
-    this.currentSubIdSubject.next(updatedSubsuelos[0]?.id || null);
-  }
-
-  // Actualizar subjects
-  this.subsuelosSubject.next(updatedSubsuelos);
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
 
 deleteSubsuelo(subsueloId: string): void {
   const subsuelos = this.subsuelosSubject.value;
@@ -1950,40 +1541,7 @@ deleteSubsuelo(subsueloId: string): void {
 
 }
 
-deleteSpacesFromCurrent0(count: number): void {
-  const currentSubId = this.currentSubIdSubject.value;
-  if (!currentSubId) return;
 
-  const spaces = this.spacesSubject.value;
-  const subSpaces = Object.keys(spaces)
-    .filter(key => spaces[key].subsueloId === currentSubId)
-    .sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1]));
-
-  // Verificar que haya suficientes espacios para eliminar
-  if (subSpaces.length < count) {
-    throw new Error(`No hay suficientes espacios en ${currentSubId} para eliminar`);
-  }
-
-  /*
-  if(subSpaces.length <=1 ){
-    throw new Error('No se puede eliminar el único espacio del subsuelo')
-  }*/
-
-
-  // Verificar que los últimos 'count' espacios no estén ocupados ni reservados
-  const spacesToDelete = subSpaces.slice(-count);
-  const hasOccupiedOrHeld = spacesToDelete.some(key => spaces[key].occupied || spaces[key].hold);
-  if (hasOccupiedOrHeld) {
-    throw new Error('No se pueden eliminar espacios ocupados o reservados');
-  }
-
-  // Eliminar los espacios
-  spacesToDelete.forEach(key => delete spaces[key]);
-
-  // Actualizar spacesSubject y persistir
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
 
 deleteSpacesFromCurrent(count: number): void {
   const currentSubId = this.currentSubIdSubject.value;
@@ -2028,48 +1586,7 @@ deleteSpacesFromCurrent(count: number): void {
 }
 
 
-editSpace0(oldKey: string, newKey: string, editedSpace: Space | null): void {
-  if (!editedSpace) return;
 
-  const spaces = this.spacesSubject.value;
-  const space = spaces[oldKey];
-  if (!space || space.hold) { // Solo bloquear si hold es true (reservado)
-    throw new Error('No se puede editar un espacio reservado');
-  }
-
-  // Validar unicidad solo si la clave cambió
-  if (newKey !== oldKey && spaces[newKey]) {
-    throw new Error('La nueva clave ya existe');
-  }
-
-  // Actualizar clave (si cambió)
-  if (newKey !== oldKey) {
-    space.key = newKey;
-  }
-
-  // Actualizar campos editables (excepto key)
-  space.displayName = editedSpace.displayName || space.displayName;
-  space.subsueloId = editedSpace.subsueloId || space.subsueloId;
-
-  // Actualizar cliente si existe y se editó
-  if (space.client && editedSpace.client) {
-    space.client.name = editedSpace.client.name || space.client.name;
-    space.client.notes = editedSpace.client.notes || space.client.notes;
-    space.client.vehicle = editedSpace.client.vehicle || space.client.vehicle;
-    space.client.plate = editedSpace.client.plate || space.client.plate;
-    space.client.phoneIntl = editedSpace.client.phoneIntl || space.client.phoneIntl;
-    space.client.phoneRaw = editedSpace.client.phoneRaw || space.client.phoneRaw;
-  }
-
-  // Si la clave cambió, mover la entrada
-  if (newKey !== oldKey) {
-    delete spaces[oldKey];
-    spaces[newKey] = space;
-  }
-
-  this.spacesSubject.next({ ...spaces });
-  this.saveAll();
-}
 
 editSpace(oldKey: string, newKey: string, editedSpace: Space | null): void {
   if (!editedSpace) return;
@@ -2305,2265 +1822,6 @@ generateReportsListHtml(): string { // Sin parámetro; fetch interno
 
 
 
-generateReportDetailHtml0(report: Report): string {
-  // Parse JSON strings
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  const filteredClients = JSON.parse(report.filteredClients || '[]');
-
-  const reportHtml = `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: { label: any; total: any; occupied: any; free: any; occupancyRate: number; }) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Clientes Activos -->
-    <div class="section">
-      <h2>Clientes Activos (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: { code: any; name: any; spaceDisplayName: any; phoneIntl: any; vehicle: any; elapsedTime: any; }) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td style="color: #f59e0b;">${client.elapsedTime || 'N/A'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-  return reportHtml;
-}
-
-generateReportDetailHtml1(report: Report): string {
-  // Parsear los JSON que vienen como string desde la base de datos
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Calcular el tiempo transcurrido para cada cliente usando qrText.start
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    try {
-      const qrData = JSON.parse(client.qrText || '{}');
-      const start = qrData.start || 0;
-      if (start > 0) {
-        const ms = now - start;
-        const mins = Math.floor(ms / 60000);
-        const hours = Math.floor(mins / 60);
-        const min = mins % 60;
-        elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-      }
-    } catch (e) {
-      // Si falla el parse, deja N/A
-    }
-    return { ...client, elapsedTime };
-  });
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Clientes Activos -->
-    <div class="section">
-      <h2>Clientes Activos (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-generateReportDetailHtml2(report: Report): string {
-  // Parsear los JSON que vienen como string desde la base de datos
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Calcular el tiempo transcurrido para cada cliente usando qrText.start
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    try {
-      const qrData = JSON.parse(client.qrText || '{}');
-      const start = qrData.start || 0;
-      if (start > 0) {
-        const ms = now - start;
-        const mins = Math.floor(ms / 60000);
-        const hours = Math.floor(mins / 60);
-        const min = mins % 60;
-        elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-      }
-    } catch (e) {
-      // Si falla el parse, deja N/A
-    }
-    return { ...client, elapsedTime };
-  });
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Clientes Activos - CON CATEGORÍA Y PRECIO -->
-    <div class="section">
-      <h2>Clientes Activos (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge" [ngClass]="{
-                    'bg-primary': client.category === 'SUV',
-                    'bg-success': client.category === 'AUTO',
-                    'bg-warning': client.category === 'PICKUP',
-                    'bg-danger': client.category === 'ALTO PORTE',
-                    'bg-secondary': client.category === 'MOTO' || !client.category
-                  }">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-generateReportDetailHtml3(report: Report): string {
-  // Parsear los JSON que vienen como string desde la base de datos
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Usar startTime directamente del cliente (disponible en el objeto guardado)
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    if (client.startTime && typeof client.startTime === 'number') {
-      const start = client.startTime;
-      const ms = now - start;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(start);
-      formattedStart = date.toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + date.toLocaleTimeString('es-AR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' hs';
-    }
-
-    return {
-      ...client,
-      elapsedTime,
-      formattedStart
-    };
-  });
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Clientes Activos -->
-    <div class="section">
-      <h2>Servicios del día (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-generateReportDetailHtml4(report: Report): string {
-  // Parsear los JSON
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Fecha del reporte (la misma que usas en todayDate())
-  const reportDate = new Date(report.timestamp);
-  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  // Calcular tiempo transcurrido e ingreso bonito
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    if (client.startTime && typeof client.startTime === 'number') {
-      const start = client.startTime;
-      const ms = now - start;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(start);
-      formattedStart = date.toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + date.toLocaleTimeString('es-AR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' hs';
-    }
-
-    return { ...client, elapsedTime, formattedStart };
-  });
-
-
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    h2 { color: #0ea5e9; margin-bottom: 20px; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Servicios del día -->
-    <div class="section">
-      <h2>Servicios del día ${formattedReportDate} (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-generateReportDetailHtml00(report: Report): string {
-  // Parsear los JSON
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients: any[] = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Fecha del reporte (como en tu todayDate())
-  const reportDate = new Date(report.timestamp);
-  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  // Calcular tiempo transcurrido e ingreso bonito
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    if (client.startTime && typeof client.startTime === 'number') {
-      const start = client.startTime;
-      const ms = now - start;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(start);
-      formattedStart = date.toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + date.toLocaleTimeString('es-AR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' hs';
-    }
-
-    return { ...client, elapsedTime, formattedStart };
-  });
-
-  // TOTAL COBRADO DEL DÍA
-  const totalCobrado = filteredClients.reduce((sum: number, client: any) => {
-    return sum + (client.price || 0);
-  }, 0);
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    h2 { color: #0ea5e9; margin-bottom: 20px; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    .total-cobrado { border-left-color: #10b981 !important; }
-    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <!-- TOTAL COBRADO -->
-        <div class="stat-card total-cobrado">
-          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
-          <div>Total Cobrado del Día</div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Servicios del día -->
-    <div class="section">
-      <h2>Servicios del día ${formattedReportDate} (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Método Pago</th>
-              <th>Clover</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>
-                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
-                </td>
-                <td>
-                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-
-generateReportDetailHtml01(report: Report): string {
-  // Parsear los JSON
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients: any[] = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Fecha del reporte
-  const reportDate = new Date(report.timestamp);
-  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  // Calcular tiempo transcurrido e ingreso bonito
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    if (client.startTime && typeof client.startTime === 'number') {
-      const start = client.startTime;
-      const ms = now - start;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(start);
-      formattedStart = date.toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + date.toLocaleTimeString('es-AR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' hs';
-    }
-
-    return { ...client, elapsedTime, formattedStart };
-  });
-
-  // TOTAL COBRADO DEL DÍA
-  const totalCobrado = filteredClients.reduce((sum: number, client: any) => {
-    return sum + (client.price || 0);
-  }, 0);
-
-  // ← NUEVO: ESTADÍSTICAS DE MÉTODOS DE PAGO
-
-  const paymentStats = { efectivo: 0, credito: 0, prepago: 0, qr: 0, otros: 0 };
-  filteredClients.forEach((client: any) => {
-    const method = (client.paymentMethod || 'otros').toLowerCase();
-    if (method in paymentStats) {
-      paymentStats[method as keyof typeof paymentStats]++;
-    } else {
-      paymentStats.otros++;
-    }
-  });
-
-  const totalClientsWithPayment = filteredClients.length;
-  const efectivoPct = totalClientsWithPayment > 0 ? Math.round((paymentStats.efectivo / totalClientsWithPayment) * 100) : 0;
-  const creditoPct = totalClientsWithPayment > 0 ? Math.round((paymentStats.credito / totalClientsWithPayment) * 100) : 0;
-  const prepagoPct = totalClientsWithPayment > 0 ? Math.round((paymentStats.prepago / totalClientsWithPayment) * 100) : 0;
-  const qrPct = totalClientsWithPayment > 0 ? Math.round((paymentStats.qr / totalClientsWithPayment) * 100) : 0;
-  const otrosPct = totalClientsWithPayment > 0 ? Math.round((paymentStats.otros / totalClientsWithPayment) * 100) : 0;
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    h2 { color: #0ea5e9; margin-bottom: 20px; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    .total-cobrado { border-left-color: #10b981 !important; }
-    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString()}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <!-- TOTAL COBRADO -->
-        <div class="stat-card total-cobrado">
-          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
-          <div>Total Cobrado del Día</div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #10b981;">${report.occupiedSpaces}</div>
-          <div>Ocupados</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #3b82f6;">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" style="color: #f59e0b;">${report.occupancyRate}%</div>
-          <div>Ocupación</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Distribución por Tiempo</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-       <!-- Métodos de Pago -->
-    <div class="section">
-      <h2>Métodos de Pago</h2>
-      <div class="time-stats">
-        <div class="time-card" style="border-left-color: #10b981;">
-          <div class="time-number" style="color: #10b981;">${efectivoPct}%</div>
-          <div>Efectivo (${paymentStats.efectivo})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #f59e0b;">
-          <div class="time-number" style="color: #f59e0b;">${creditoPct}%</div>
-          <div>Crédito (${paymentStats.credito})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #3b82f6;">
-          <div class="time-number" style="color: #3b82f6;">${prepagoPct}%</div>
-          <div>Prepago (${paymentStats.prepago})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #a855f7;">
-          <div class="time-number" style="color: #a855f7;">${qrPct}%</div>
-          <div>QR (${paymentStats.qr})</div>
-        </div>
-        ${otrosPct > 0 ? `
-        <div class="time-card" style="border-left-color: #94a3b8;">
-          <div class="time-number" style="color: #94a3b8;">${otrosPct}%</div>
-          <div>Sin especificar (${paymentStats.otros})</div>
-        </div>
-        ` : ''}
-      </div>
-    </div>
-
-    <!-- Servicios del día -->
-    <div class="section">
-      <h2>Servicios del día ${formattedReportDate} (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Método Pago</th>
-              <th>Clover</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>+${client.phoneIntl}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>
-                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
-                </td>
-                <td>
-                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-
-
-/*
-generateReportDetailHtml0(report: Report): string {
-  // Parsear los JSON
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients: any[] = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Fecha del reporte
-  const reportDate = new Date(report.timestamp);
-  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  // Calcular tiempo transcurrido e ingreso bonito
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    if (client.entryTimestamp && typeof client.entryTimestamp === 'number') {
-      const start = client.entryTimestamp;
-      const ms = now - start;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(start);
-      formattedStart = date.toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + date.toLocaleTimeString('es-AR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' hs';
-    }
-
-    return { ...client, elapsedTime, formattedStart };
-  });
-
-  // TOTAL COBRADO DEL DÍA
-  const totalCobrado = filteredClients.reduce((sum: number, client: any) => {
-    return sum + (client.price || 0);
-  }, 0);
-
-  // PROMEDIO POR SERVICIO
-  const promedioServicio = filteredClients.length > 0
-    ? Math.round(totalCobrado / filteredClients.length)
-    : 0;
-
-  // MÉTODOS DE PAGO
-  const paymentStats = { efectivo: 0, credito: 0, prepago: 0, qr: 0, debito: 0, scaneo: 0, otros: 0 };
-  filteredClients.forEach((client: any) => {
-    const method = (client.paymentMethod || 'otros').toLowerCase();
-    if (method in paymentStats) {
-      paymentStats[method as keyof typeof paymentStats]++;
-    } else {
-      paymentStats.otros++;
-    }
-  });
-
-  const totalClients = filteredClients.length;
-  const efectivoPct = totalClients > 0 ? Math.round((paymentStats.efectivo / totalClients) * 100) : 0;
-  const creditoPct = totalClients > 0 ? Math.round((paymentStats.credito / totalClients) * 100) : 0;
-  const prepagoPct = totalClients > 0 ? Math.round((paymentStats.prepago / totalClients) * 100) : 0;
-  const qrPct = totalClients > 0 ? Math.round((paymentStats.qr / totalClients) * 100) : 0;
-  const debitoPct = totalClients > 0 ? Math.round((paymentStats.debito / totalClients) * 100) : 0;
-  const scaneoPct = totalClients > 0 ? Math.round((paymentStats.scaneo / totalClients) * 100) : 0;
-  const otrosPct = totalClients > 0 ? Math.round((paymentStats.otros / totalClients) * 100) : 0;
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    h2 { color: #0ea5e9; margin-bottom: 20px; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    .total-cobrado { border-left-color: #10b981 !important; }
-    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-    .badge { padding: 0.5em 0.75em; font-size: 0.85rem; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString('es-AR')}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card total-cobrado">
-          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
-          <div>Total Cobrado Hoy</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-success">${report.occupiedSpaces}</div>
-          <div>Ocupados Ahora</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-info">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-warning">${report.occupancyRate}%</div>
-          <div>Ocupación Actual</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-primary">${filteredClients.length}</div>
-          <div>Servicios del Día</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-info">$${promedioServicio.toLocaleString('es-AR')}</div>
-          <div>Promedio por Servicio</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Detalle por Subsuelo -->
-    <div class="section">
-      <h2>Detalle por Subsuelo</h2>
-      <table class="table table-dark table-striped">
-        <thead>
-          <tr>
-            <th>Subsuelo</th>
-            <th>Total</th>
-            <th>Ocupados</th>
-            <th>Libres</th>
-            <th>% Ocupación</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subsueloStats.length > 0 ? subsueloStats.map((stat: any) => `
-            <tr>
-              <td>${stat.label}</td>
-              <td>${stat.total}</td>
-              <td><span class="badge bg-danger">${stat.occupied}</span></td>
-              <td><span class="badge bg-success">${stat.free}</span></td>
-              <td>
-                <div class="progress">
-                  <div class="progress-bar bg-${stat.occupancyRate < 50 ? 'success' : stat.occupancyRate < 80 ? 'warning' : 'danger'}" style="width: ${stat.occupancyRate}%">
-                    ${stat.occupancyRate}%
-                  </div>
-                </div>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="5" class="no-data">No hay datos de subsuelos</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Métodos de Pago -->
-    <div class="section">
-      <h2>Métodos de Pago</h2>
-      <div class="time-stats">
-        <div class="time-card" style="border-left-color: #10b981;">
-          <div class="time-number" style="color: #10b981;">${efectivoPct}%</div>
-          <div>Efectivo (${paymentStats.efectivo})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #f59e0b;">
-          <div class="time-number" style="color: #f59e0b;">${creditoPct}%</div>
-          <div>Crédito (${paymentStats.credito})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #3b82f6;">
-          <div class="time-number" style="color: #3b82f6;">${prepagoPct}%</div>
-          <div>Prepago (${paymentStats.prepago})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #a855f7;">
-          <div class="time-number" style="color: #a855f7;">${qrPct}%</div>
-          <div>QR (${paymentStats.qr})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #6366f1;">
-          <div class="time-number" style="color: #6366f1;">${debitoPct}%</div>
-          <div>Débito (${paymentStats.debito})</div>
-        </div>
-        <div class="time-card" style="border-left-color: #ec4899;">
-          <div class="time-number" style="color: #ec4899;">${scaneoPct}%</div>
-          <div>Escaneo (${paymentStats.scaneo})</div>
-        </div>
-        ${otrosPct > 0 ? `
-        <div class="time-card" style="border-left-color: #94a3b8;">
-          <div class="time-number" style="color: #94a3b8;">${otrosPct}%</div>
-          <div>Sin especificar (${paymentStats.otros})</div>
-        </div>
-        ` : ''}
-      </div>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Tiempo de Ocupación</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Servicios del día -->
-    <div class="section">
-      <h2>Servicios del día ${formattedReportDate} (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Método Pago</th>
-              <th>Clover</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-              <th>Salida</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>${client.phoneIntl || '-'}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>
-                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
-                </td>
-                <td>
-                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-                <td>
-                  <span class="text-warning">
-                    ${client.exitTimestamp ? new Date(client.exitTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Aún en servicio'}
-                  </span>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}*/
-
-
-generateReportDetailHtml000(report: Report): string {
-  // Parsear los JSON
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients: any[] = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // NUEVO: Parsear los montos por método de pago y el total
-  const paymentAmounts = JSON.parse(report.paymentAmounts || '{}');
-  const totalCobrado = report.totalCobrado || 0;
-
-  // Fecha del reporte
-  const reportDate = new Date(report.timestamp);
-  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  // Enriquecer clientes (tu lógica actual)
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    if (client.entryTimestamp && typeof client.entryTimestamp === 'number') {
-      const start = client.entryTimestamp;
-      const ms = now - start;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(start);
-      formattedStart = date.toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + date.toLocaleTimeString('es-AR', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }) + ' hs';
-    }
-
-    return { ...client, elapsedTime, formattedStart };
-  });
-
-  // TOTAL COBRADO DEL DÍA (para referencia)
-  const promedioServicio = filteredClients.length > 0
-    ? Math.round(totalCobrado / filteredClients.length)
-    : 0;
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    h2 { color: #0ea5e9; margin-bottom: 20px; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    .total-cobrado { border-left-color: #10b981 !important; }
-    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-    .badge { padding: 0.5em 0.75em; font-size: 0.85rem; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString('es-AR')}</h1>
-
-  <div class="container-fluid px-4">
-    <!-- Resumen General -->
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card total-cobrado">
-          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
-          <div>Total Cobrado Hoy</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-success">${report.occupiedSpaces}</div>
-          <div>Ocupados Ahora</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-info">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-warning">${report.occupancyRate}%</div>
-          <div>Ocupación Actual</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-primary">${filteredClients.length}</div>
-          <div>Servicios del Día</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-info">$${promedioServicio.toLocaleString('es-AR')}</div>
-          <div>Promedio por Servicio</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Montos por Método de Pago (AHORA CON DINERO) -->
-    <div class="section">
-      <h2>Montos Cobrados por Método de Pago</h2>
-      <div class="time-stats">
-        <div class="time-card" style="border-left-color: #1e7e34;">
-          <div class="time-number" style="color: #1e7e34;">$${paymentAmounts.efectivo?.toLocaleString('es-AR') || '0'}</div>
-          <div>Efectivo</div>
-        </div>
-        <div class="time-card" style="border-left-color: #c45c00;">
-          <div class="time-number" style="color: #c45c00;">$${paymentAmounts.credito?.toLocaleString('es-AR') || '0'}</div>
-          <div>Crédito</div>
-        </div>
-        <div class="time-card" style="border-left-color: #0c5460;">
-          <div class="time-number" style="color: #0c5460;">$${paymentAmounts.debito?.toLocaleString('es-AR') || '0'}</div>
-          <div>Débito</div>
-        </div>
-        <div class="time-card" style="border-left-color: #5a2d91;">
-          <div class="time-number" style="color: #5a2d91;">$${paymentAmounts.prepago?.toLocaleString('es-AR') || '0'}</div>
-          <div>Prepago</div>
-        </div>
-        <div class="time-card" style="border-left-color: #a71d2a;">
-          <div class="time-number" style="color: #a71d2a;">$${paymentAmounts.qr?.toLocaleString('es-AR') || '0'}</div>
-          <div>QR</div>
-        </div>
-        <div class="time-card" style="border-left-color: #b35c00;">
-          <div class="time-number" style="color: #b35c00;">$${paymentAmounts.scaneo?.toLocaleString('es-AR') || '0'}</div>
-          <div>Escaneo</div>
-        </div>
-        <div class="time-card" style="border-left-color: #5a6268;">
-          <div class="time-number" style="color: #5a6268;">$${paymentAmounts['S/Cargo']?.toLocaleString('es-AR') || '0'}</div>
-          <div>Sin Cargo</div>
-        </div>
-        ${paymentAmounts.otros > 0 ? `
-        <div class="time-card" style="border-left-color: #6c757d;">
-          <div class="time-number" style="color: #6c757d;">$${paymentAmounts.otros.toLocaleString('es-AR')}</div>
-          <div>Otros</div>
-        </div>
-        ` : ''}
-      </div>
-    </div>
-
-    <!-- Distribución por Tiempo -->
-    <div class="section">
-      <h2>Tiempo de Ocupación</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Servicios del día -->
-    <div class="section">
-      <h2>Servicios del día ${formattedReportDate} (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Método Pago</th>
-              <th>Clover</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-              <th>Salida</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>${client.phoneIntl || '-'}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>
-                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
-                </td>
-                <td>
-                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-                <td>
-                  <span class="text-warning">
-                    ${client.exitTimestamp ? new Date(client.exitTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Aún en servicio'}
-                  </span>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
-
-generateReportDetailHtml001(
-  report: Report,
-  options?: { periodLabel?: string; periodDateLabel?: string }
-): string {
-  // Parsear los JSON
-  const subsueloStats = JSON.parse(report.subsueloStats || '[]');
-  const timeStats = JSON.parse(report.timeStats || '{}');
-  let filteredClients: any[] = [];
-  try {
-    filteredClients = JSON.parse(report.filteredClients || '[]');
-  } catch (e) {
-    console.error('Error parsing filteredClients', e);
-  }
-
-  // Parsear montos y total
-  const paymentAmounts = JSON.parse(report.paymentAmounts || '{}') as Record<string, number>;
-  const totalCobrado = report.totalCobrado || 0;
-
-  // Fecha del reporte
-  const reportDate = new Date(report.timestamp);
-  const formattedReportDate = reportDate.toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-
-  // Títulos dinámicos (diario/mensual)
-  const periodLabel = options?.periodLabel || 'Servicios del día';
-  const periodDateLabel = options?.periodDateLabel || formattedReportDate;
-
-  // Enriquecer clientes
-  const now = Date.now();
-  filteredClients = filteredClients.map((client: any) => {
-    let elapsedTime = 'N/A';
-    let formattedStart = '-';
-
-    const startMs =
-      typeof client.entryTimestamp === 'string'
-        ? new Date(client.entryTimestamp).getTime()
-        : client.entryTimestamp;
-
-    if (startMs && !isNaN(startMs)) {
-      const ms = now - startMs;
-      const mins = Math.floor(ms / 60000);
-      const hours = Math.floor(mins / 60);
-      const min = mins % 60;
-      elapsedTime = hours > 0 ? `${hours}h ${min}m` : `${min}m`;
-
-      const date = new Date(startMs);
-      formattedStart =
-        date.toLocaleDateString('es-AR', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric'
-        }) +
-        ' ' +
-        date.toLocaleTimeString('es-AR', {
-          hour: '2-digit',
-          minute: '2-digit'
-        }) +
-        ' hs';
-    }
-
-    return { ...client, elapsedTime, formattedStart };
-  });
-
-  const promedioServicio = filteredClients.length > 0
-    ? Math.round(totalCobrado / filteredClients.length)
-    : 0;
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Detalle Reporte ID ${report.id} - Exellsior</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; margin: 20px; }
-    h1 { color: #0ea5e9; text-align: center; }
-    h2 { color: #0ea5e9; margin-bottom: 20px; }
-    .section { margin-bottom: 30px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .stat-number { font-size: 2em; font-weight: bold; color: #0ea5e9; }
-    .total-cobrado { border-left-color: #10b981 !important; }
-    .total-number { color: #10b981 !important; font-size: 2.5em !important; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
-    th { background: #16213e; font-weight: bold; color: #0ea5e9; }
-    tr:hover { background: #2d446a; }
-    .progress { background: #374151; border-radius: 4px; height: 20px; overflow: hidden; }
-    .progress-bar { height: 100%; line-height: 20px; text-align: center; font-size: 0.875em; }
-    .time-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-    .time-card { background: #1e293b; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #0ea5e9; }
-    .time-number { font-size: 1.5em; font-weight: bold; }
-    .no-data { text-align: center; color: #94a3b8; padding: 40px; }
-    .badge { padding: 0.5em 0.75em; font-size: 0.85rem; }
-  </style>
-</head>
-<body>
-  <h1>Detalle Reporte ID ${report.id} - ${new Date(report.timestamp).toLocaleString('es-AR')}</h1>
-
-  <div class="container-fluid px-4">
-    <div class="section">
-      <h2>Resumen General</h2>
-      <div class="stats">
-        <div class="stat-card total-cobrado">
-          <div class="stat-number total-number">$${totalCobrado.toLocaleString('es-AR')}</div>
-          <div>Total Cobrado</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number">${report.totalSpaces}</div>
-          <div>Total Espacios</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-success">${report.occupiedSpaces}</div>
-          <div>Ocupados Ahora</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-info">${report.freeSpaces}</div>
-          <div>Libres</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-warning">${report.occupancyRate}%</div>
-          <div>Ocupación Actual</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-primary">${filteredClients.length}</div>
-          <div>${periodLabel}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number text-info">$${promedioServicio.toLocaleString('es-AR')}</div>
-          <div>Promedio por Servicio</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Montos Cobrados por Método de Pago</h2>
-      <div class="time-stats">
-        <div class="time-card" style="border-left-color: #1e7e34;">
-          <div class="time-number" style="color: #1e7e34;">$${(paymentAmounts['efectivo'] || 0).toLocaleString('es-AR')}</div>
-          <div>Efectivo</div>
-        </div>
-        <div class="time-card" style="border-left-color: #c45c00;">
-          <div class="time-number" style="color: #c45c00;">$${(paymentAmounts['credito'] || 0).toLocaleString('es-AR')}</div>
-          <div>Crédito</div>
-        </div>
-        <div class="time-card" style="border-left-color: #0c5460;">
-          <div class="time-number" style="color: #0c5460;">$${(paymentAmounts['debito'] || 0).toLocaleString('es-AR')}</div>
-          <div>Débito</div>
-        </div>
-        <div class="time-card" style="border-left-color: #5a2d91;">
-          <div class="time-number" style="color: #5a2d91;">$${(paymentAmounts['prepago'] || 0).toLocaleString('es-AR')}</div>
-          <div>Prepago</div>
-        </div>
-        <div class="time-card" style="border-left-color: #a71d2a;">
-          <div class="time-number" style="color: #a71d2a;">$${(paymentAmounts['qr'] || 0).toLocaleString('es-AR')}</div>
-          <div>QR</div>
-        </div>
-        <div class="time-card" style="border-left-color: #b35c00;">
-          <div class="time-number" style="color: #b35c00;">$${(paymentAmounts['scaneo'] || 0).toLocaleString('es-AR')}</div>
-          <div>Escaneo</div>
-        </div>
-        <div class="time-card" style="border-left-color: #5a6268;">
-          <div class="time-number" style="color: #5a6268;">$${(paymentAmounts['S/Cargo'] || 0).toLocaleString('es-AR')}</div>
-          <div>Sin Cargo</div>
-        </div>
-        ${(paymentAmounts['otros'] || 0) > 0 ? `
-        <div class="time-card" style="border-left-color: #6c757d;">
-          <div class="time-number" style="color: #6c757d;">$${(paymentAmounts['otros'] || 0).toLocaleString('es-AR')}</div>
-          <div>Otros</div>
-        </div>
-        ` : ''}
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Tiempo de Ocupación</h2>
-      <div class="time-stats">
-        <div class="time-card">
-          <div class="time-number" style="color: #10b981;">${timeStats.under1h || 0}</div>
-          <div>Menos de 1h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #f59e0b;">${timeStats.between1h3h || 0}</div>
-          <div>1h - 3h</div>
-        </div>
-        <div class="time-card">
-          <div class="time-number" style="color: #ef4444;">${timeStats.over3h || 0}</div>
-          <div>Más de 3h</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>${periodLabel} ${periodDateLabel} (${filteredClients.length})</h2>
-      ${filteredClients.length > 0 ? `
-        <table class="table table-dark table-striped">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Cliente</th>
-              <th>Espacio</th>
-              <th>Teléfono</th>
-              <th>Vehículo</th>
-              <th>Categoría</th>
-              <th>Precio</th>
-              <th>Método Pago</th>
-              <th>Clover</th>
-              <th>Ingreso</th>
-              <th>Tiempo</th>
-              <th>Salida</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredClients.map((client: any) => `
-              <tr>
-                <td><span style="background: #1e293b; padding: 2px 6px; border-radius: 4px; font-family: monospace;">${client.code || '-'}</span></td>
-                <td>${client.name}</td>
-                <td style="color: #3b82f6;">${client.spaceDisplayName || client.spaceKey || '-'}</td>
-                <td>${client.phoneIntl || '-'}</td>
-                <td>${client.vehicle || '-'}</td>
-                <td>
-                  <span class="badge bg-${client.category === 'SUV' ? 'primary' : client.category === 'AUTO' ? 'success' : client.category === 'PICKUP' ? 'warning' : client.category === 'ALTO PORTE' ? 'danger' : 'secondary'}">
-                    ${client.category || 'Sin categoría'}
-                  </span>
-                </td>
-                <td style="color: #10b981; font-weight: bold;">
-                  $${client.price ? client.price.toLocaleString('es-AR') : 'Pendiente'}
-                </td>
-                <td>
-                  <span class="badge bg-light text-dark">${client.paymentMethod || '-'}</span>
-                </td>
-                <td>
-                  <strong>${client.clover ? client.clover.toString().padStart(4, '0') : '-'}</strong>
-                </td>
-                <td>${client.formattedStart}</td>
-                <td style="color: #f59e0b; font-weight: bold;">${client.elapsedTime}</td>
-                <td>
-                  <span class="text-warning">
-                    ${client.exitTimestamp ? new Date(client.exitTimestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Aún en servicio'}
-                  </span>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      ` : '<div class="no-data">No hay clientes en este reporte</div>'}
-    </div>
-  </div>
-
-  <script>
-    window.onload = function() { window.print(); };
-  </script>
-</body>
-</html>
-  `;
-}
 
 generateReportDetailHtml(
   report: Report,

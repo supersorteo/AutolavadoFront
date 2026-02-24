@@ -51,7 +51,7 @@
         </div>
         <hr>
         <div class="grid">
-          <div *ngFor="let space of filteredSpaces"
+          <div *ngFor="let space of filteredSpaces; trackBy: trackBySpaceKey"
                class="d-flex flex-column align-items-center"
                [class.search-hit]="isSearchHit(space)">
             <button class="btn btn-space"
@@ -231,7 +231,7 @@
           </div>
         <button type="button" class="btn-close btn-close-white" (click)="closeClientModal()" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body position-relative">
         <form [formGroup]="clientForm" class="row g-3">
 
                <!-- NUEVO CAMPO DNI - AL INICIO -->
@@ -399,7 +399,9 @@
           <div class="col-md-12 d-grid d-md-flex gap-2">
             <button class="btn btn-primary flex-fill btn-sm d-block d-md-inline-block"
                     (click)="saveClient()"
-                    [disabled]="clientForm.invalid">
+
+                    [disabled]="clientForm.invalid || !phoneIsValid"
+>
               Ocupar espacio
             </button>
 
@@ -426,13 +428,162 @@
             <div class="small text-dark mt-2">{{qrCaption}}</div>
           </div>
         </div>
+
+
+
+        <div class="client-vehicles-modal" *ngIf="showClientVehiclesModal">
+  <div class="client-vehicles-modal__backdrop" (click)="closeClientVehiclesModal()"></div>
+
+  <div class="client-vehicles-modal__content">
+    <div class="client-vehicles-modal__header">
+      <h5 class="mb-0">
+        <i class="fas fa-car me-2 text-info"></i>
+        Vehículos del cliente ({{ clientVehiclesList.length }}/4)
+      </h5>
+
+      <div class="d-flex align-items-center gap-2">
+        <small *ngIf="isLoadingClientVehiclesModal" class="text-info mb-0">
+          <i class="fas fa-spinner fa-spin me-1"></i>Cargando...
+        </small>
+        <small *ngIf="isSyncingClientVehicles" class="text-warning mb-0">
+          <i class="fas fa-spinner fa-spin me-1"></i>Sincronizando...
+        </small>
+
+        <button
+          class="btn-close btn-close-white"
+          type="button"
+          (click)="closeClientVehiclesModal()"
+          [disabled]="isSyncingClientVehicles"
+          aria-label="Cerrar">
+        </button>
+      </div>
+    </div>
+
+    <div class="client-vehicles-modal__body">
+
+      <div *ngIf="clientVehiclesModalError" class="alert alert-warning py-2 mb-3">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        {{ clientVehiclesModalError }}
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Modelo *</label>
+          <input
+            class="form-control form-control-dark"
+            [(ngModel)]="clientVehicleEditor.model"
+            [ngModelOptions]="{ standalone: true }"
+            placeholder="Ej: Toyota Corolla"
+            [readonly]="editingClientVehicleIndex !== null || isSyncingClientVehicles"
+            [disabled]="isLoadingClientVehiclesModal">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label">Matrícula</label>
+          <input
+            class="form-control form-control-dark"
+            [(ngModel)]="clientVehicleEditor.plate"
+            [ngModelOptions]="{ standalone: true }"
+            placeholder="ABC123"
+            (mousedown)="$event.stopPropagation()"
+            (click)="$event.stopPropagation()"
+            [disabled]="isSyncingClientVehicles">
+        </div>
+
+        <div class="col-md-5">
+          <label class="form-label">Notas</label>
+          <input
+            class="form-control form-control-dark"
+            [(ngModel)]="clientVehicleEditor.notes"
+            [ngModelOptions]="{ standalone: true }"
+            placeholder="Color, versión, etc."
+            (mousedown)="$event.stopPropagation()"
+            (click)="$event.stopPropagation()"
+
+            [disabled]="isSyncingClientVehicles">
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mb-3">
+        <button
+          class="btn btn-primary btn-sm"
+          type="button"
+          (click)="saveClientVehicleItem()"
+          [disabled]="!canSubmitClientVehicleEditor || isLoadingClientVehiclesModal">
+          <i class="fas" [ngClass]="isSyncingClientVehicles ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+          <span class="ms-2">
+            {{ editingClientVehicleIndex !== null ? 'Actualizar vehículo' : 'Agregar vehículo' }}
+          </span>
+        </button>
+
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          type="button"
+          (click)="clearClientVehicleEditorState()"
+          [disabled]="isSyncingClientVehicles || isLoadingClientVehiclesModal">
+          Limpiar
+        </button>
+      </div>
+
+      <div *ngIf="isLoadingClientVehiclesModal" class="text-center text-muted py-3">
+        <i class="fas fa-spinner fa-spin me-2"></i>
+        Cargando vehículos del cliente...
+      </div>
+
+      <div class="client-vehicles-grid" *ngIf="!isLoadingClientVehiclesModal">
+        <div
+          class="client-vehicle-card"
+          *ngFor="let item of clientVehiclesList; let i = index; trackBy: trackByClientVehicleModel"
+          [class.opacity-75]="isSyncingClientVehicles"
+          (click)="!isSyncingClientVehicles && selectClientVehicleItem(item)">
+
+          <div class="d-flex justify-content-between align-items-start mb-2">
+            <strong>{{ item.model }}</strong>
+            <span class="badge bg-secondary">#{{ i + 1 }}</span>
+          </div>
+
+          <div class="small text-muted">Matrícula: {{ item.plate || '-' }}</div>
+          <div class="small text-muted mb-2">Notas: {{ item.notes || '-' }}</div>
+
+          <div class="d-flex gap-2">
+            <button
+              class="btn btn-outline-warning btn-sm"
+              type="button"
+              [disabled]="isSyncingClientVehicles"
+              (click)="editClientVehicleItem(i); $event.stopPropagation()">
+              Editar
+            </button>
+
+            <button
+              class="btn btn-outline-danger btn-sm"
+              type="button"
+              [disabled]="isSyncingClientVehicles"
+              (click)="deleteClientVehicleItem(i); $event.stopPropagation()">
+              Borrar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="!isLoadingClientVehiclesModal && clientVehiclesList.length === 0" class="text-muted small mt-2">
+        No hay vehículos cargados. Puedes agregar hasta 4.
+      </div>
+
+      <div class="text-muted small mt-2" *ngIf="!isLoadingClientVehiclesModal">
+        Tip: haz clic sobre una tarjeta para cargar ese vehículo en el campo "Modelo de vehículo".
+      </div>
+    </div>
+  </div>
+</div>
+
       </div>
     </div>
   </div>
 </div>
 
 <!-- Modal Vehículos del cliente -->
-<div class="client-vehicles-modal" *ngIf="showClientVehiclesModal">
+
+<!--div-- class="client-vehicles-modal" *ngIf="showClientVehiclesModal">
   <div class="client-vehicles-modal__backdrop" (click)="closeClientVehiclesModal()"></div>
   <div class="client-vehicles-modal__content">
     <div class="client-vehicles-modal__header">
@@ -484,14 +635,13 @@
       <div class="client-vehicles-grid">
         <div
           class="client-vehicle-card"
-          *ngFor="let item of clientVehiclesList; let i = index"
+          *ngFor="let item of clientVehiclesList; let i = index; trackBy: trackByClientVehicleModel"
           (click)="selectClientVehicleItem(item)">
           <div class="d-flex justify-content-between align-items-start mb-2">
             <strong>{{ item.model }}</strong>
             <span class="badge bg-secondary">#{{ i + 1 }}</span>
           </div>
-          <!--div class="small text-muted">Categoría: {{ item.category || '-' }}</!--div>
-          <div-- class="small text-muted mb-2">Precio: ${{ item.price || 0 }}</div-->
+
           <div class="small text-muted">Matrícula: {{ item.plate || '-' }}</div>
          <div class="small text-muted mb-2">Notas: {{ item.notes || '-' }}</div>
 
@@ -514,7 +664,11 @@
       </div>
     </div>
   </div>
-</div>
+</!--div-->
+
+
+
+
 
 <!-- Modal Cliente Frecuente -->
 <div class="client-frequent-modal" *ngIf="showFrequentClientModal">
@@ -541,7 +695,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let visit of frequentClientVisitsSnapshot">
+            <tr *ngFor="let visit of frequentClientVisitsSnapshot; trackBy: trackByVisitId">
               <!--td>{{ formatVisitDateLabel(visit.entryTimestamp) }}</td-->
               <td>{{ formatVisitDateLabel(getVisitTimestamp(visit)) }}</td>
               <td>{{ visit.vehicle || '-' }}</td>

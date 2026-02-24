@@ -24,7 +24,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of reportRows">
+            <tr *ngFor="let row of reportRows; trackBy: trackByReportId">
               <td>{{ row.id }}</td>
               <td>
                 <span class="badge" [ngClass]="row.periodTypeLabel === 'Mensual' ? 'bg-warning text-dark' : 'bg-info text-dark'">
