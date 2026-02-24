@@ -427,7 +427,7 @@ this.uiRefreshIntervalId = setInterval(() => {
 
 
 
- this.limpiarEspaciosDeDiasAnteriores();
+ //this.limpiarEspaciosDeDiasAnteriores();
 // NUEVO: Mantener allClients y filteredClientsAdmin sincronizados con el servicio
 
 
@@ -3910,15 +3910,7 @@ releaseSpace(): void {
 
 
 
-  resetData(): void {
-  if (confirm('Esto borrará todos los datos de clientes.')) {
-    this.autolavadoService.resetData();
-    this.sentReleaseWhatsappBySpace.clear();
-    localStorage.removeItem(this.WHATSAPP_SENT_KEY);
-    this.filterSpaces();
-    this.cdr.detectChanges();
-  }
-}
+
 
 
 
@@ -3938,7 +3930,7 @@ confirmCerrarDia(): void {
   this.cerrarDia();
 }
 
-cerrarDia(): void {
+cerrarDia0(): void {
   const hoy = new Date().toLocaleDateString('es-AR');
   console.log('Iniciando cierre del dia...');
 
@@ -3964,6 +3956,44 @@ cerrarDia(): void {
     }
   });
 }
+
+cerrarDia(): void {
+  const hoy = new Date().toLocaleDateString('es-AR');
+  console.log('[CloseDay] Iniciando cierre del dia (generar reporte final + reset)...');
+
+  this.autolavadoService.upsertDailyReportSnapshotBeforeClose$().pipe(
+    switchMap((report) => {
+      console.log('[CloseDay] Resultado reporte previo al cierre', report ? {
+        reportId: report.id,
+        timestamp: report.timestamp
+      } : 'Sin servicios del día (sin reporte)');
+      return this.autolavadoService.resetData();
+    })
+  ).subscribe({
+    next: () => {
+      console.log('[CloseDay] Dia cerrado correctamente');
+
+      this.sentReleaseWhatsappBySpace.clear();
+      localStorage.removeItem(this.WHATSAPP_SENT_STORAGE_KEY);
+
+      this.filterSpaces();
+      this.cdr.detectChanges();
+
+      this.cerrarDiaResultMessage =
+        `Dia ${hoy} cerrado.\nSe generó/actualizó el reporte diario final y luego se liberaron los espacios.`;
+      this.showModal('closeDayResultModal');
+    },
+    error: (err) => {
+      console.warn('[CloseDay] Error en generación de reporte o cierre', err);
+
+      this.cerrarDiaResultMessage =
+        'No se pudo completar el cierre del día porque falló la generación/actualización del reporte o el reset. No se ejecutó el cierre completo.';
+      this.showModal('closeDayResultModal');
+    }
+  });
+}
+
+
 
 
  deleteSpace(): void {

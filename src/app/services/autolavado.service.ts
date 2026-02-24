@@ -524,7 +524,363 @@ initializeDataPreferBackend(force: boolean = false): void {
   ).subscribe();
 }
 
+upsertDailyReportSnapshotBeforeClose$(): Observable<Report | null> {
+  const periodKey = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
+  const currentSnapshot = this.buildDailyReportPayloadFromCurrentState(periodKey);
+  const currentClients = this.parseJsonArraySafe(currentSnapshot.filteredClients);
 
+  console.log('[CloseDay] upsertDailyReportSnapshotBeforeClose$ start', {
+    periodKey,
+    currentClients: currentClients.length
+  });
+
+  return this.http.get<Report[]>(`${this.API_BASE}/reports`).pipe(
+    map((reports) => (reports || []).filter(r => this.isSameDailyReport(r, periodKey))),
+    switchMap((existingDailyReports) => {
+      console.log('[CloseDay] Reportes diarios existentes del día', {
+        periodKey,
+        count: existingDailyReports.length,
+        ids: existingDailyReports.map(r => r.id)
+      });
+
+      const existingClients = this.collectClientsFromReports(existingDailyReports);
+      const mergedClients = this.mergeAndDedupReportClients(existingClients, currentClients);
+
+      console.log('[CloseDay] Fusión de clientes para reporte diario', {
+        existingClients: existingClients.length,
+        currentClients: currentClients.length,
+        mergedClients: mergedClients.length
+      });
+
+      // Caso 1: no hay reporte previo y no hay clientes actuales -> no crear nada
+      if (!existingDailyReports.length && mergedClients.length === 0) {
+        console.log('[CloseDay] No hay reporte previo ni servicios actuales. Se omite reporte.');
+        return of(null);
+      }
+
+      // Caso 2: hay reporte previo pero no hay nuevos servicios -> conservar el último reporte existente
+      if (existingDailyReports.length > 0 && currentClients.length === 0) {
+        const latestExisting = [...existingDailyReports].sort((a, b) =>
+          new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+        )[0];
+
+        console.log('[CloseDay] No hay servicios nuevos. Se conserva reporte diario existente.', {
+          reportId: latestExisting?.id
+        });
+
+        return of(latestExisting || null);
+      }
+
+      // Construir payload final consolidado (usa snapshot actual para stats de espacios del momento del cierre)
+      const finalPayload = this.buildDailyReportPayloadWithMergedClients(periodKey, mergedClients, currentSnapshot);
+
+      // Borrar reportes diarios existentes del día (si hay) y recrear consolidado
+      const deleteCalls = existingDailyReports.map(r =>
+        this.http.delete<void>(`${this.API_BASE}/reports/${r.id}`).pipe(
+          catchError((err) => {
+            console.warn('[CloseDay] Error borrando reporte diario previo', { reportId: r.id, err });
+            // no aborta; seguimos intentando consolidar
+            return of(void 0);
+          })
+        )
+      );
+
+      return (deleteCalls.length ? forkJoin(deleteCalls) : of([])).pipe(
+        switchMap(() => this.http.post<Report>(`${this.API_BASE}/reports`, finalPayload)),
+        tap((saved) => {
+          console.log('[CloseDay] Reporte diario consolidado guardado', {
+            reportId: saved?.id,
+            periodKey,
+            mergedClients: mergedClients.length,
+            totalCobrado: finalPayload.totalCobrado
+          });
+        })
+      );
+    }),
+    catchError((err) => {
+      console.error('[CloseDay] Error generando/reemplazando reporte diario consolidado', err);
+      throw err;
+    })
+  );
+}
+
+
+
+private buildDailyReportPayloadFromCurrentState(periodKey: string) {
+  const spacesMap = this.spacesSubject.value || {};
+  const clientsMap = this.clientsSubject.value || {};
+  const spaces = Object.values(spacesMap);
+  const clients = Object.values(clientsMap);
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayTs = todayStart.getTime();
+
+  const dailyClients = clients
+    .filter((client) => {
+      const entry = this.toEpochAny(client.entryTimestamp);
+      return entry !== null && entry >= todayTs;
+    })
+    .map((client: any) => {
+      const space = spacesMap[client.spaceKey || ''];
+      return {
+        ...client,
+        startTime: space?.startTime || this.toEpochAny(client.entryTimestamp) || null,
+        spaceDisplayName: space ? (space.displayName || client.spaceKey || '-') : (client.spaceKey || '-')
+      };
+    })
+    .sort((a: any, b: any) =>
+      (this.toEpochAny(b.entryTimestamp) || 0) - (this.toEpochAny(a.entryTimestamp) || 0)
+    );
+
+  // Stats generales de espacios
+  const totalSpaces = spaces.length;
+  const occupiedSpaces = spaces.filter(s => s.occupied).length;
+  const freeSpaces = totalSpaces - occupiedSpaces;
+  const occupancyRate = totalSpaces > 0 ? Math.round((occupiedSpaces / totalSpaces) * 100) : 0;
+
+  // Stats por subsuelo
+  const subsuelos = this.subsuelosSubject.value || [];
+  const subsueloStats = subsuelos.map(sub => {
+    const subSpaces = spaces.filter(s => s.subsueloId === sub.id);
+    const occupied = subSpaces.filter(s => s.occupied).length;
+    const total = subSpaces.length;
+    const free = total - occupied;
+    return {
+      id: sub.id,
+      label: sub.label,
+      total,
+      occupied,
+      free,
+      occupancyRate: total > 0 ? Math.round((occupied / total) * 100) : 0
+    };
+  });
+
+  // Time stats (basado en entryTimestamp vs now)
+  const now = Date.now();
+  const timeStats = {
+    under1h: 0,
+    between1h3h: 0,
+    over3h: 0
+  };
+
+  dailyClients.forEach((c: any) => {
+    const entry = this.toEpochAny(c.entryTimestamp);
+    if (entry === null) return;
+    const hours = (now - entry) / 3600000;
+    if (hours < 1) timeStats.under1h++;
+    else if (hours <= 3) timeStats.between1h3h++;
+    else timeStats.over3h++;
+  });
+
+  // Payment amounts
+  const paymentAmounts: Record<string, number> = {
+    efectivo: 0,
+    credito: 0,
+    prepago: 0,
+    qr: 0,
+    debito: 0,
+    scaneo: 0,
+    'S/Cargo': 0,
+    otros: 0
+  };
+
+  dailyClients.forEach((c: any) => {
+    const method = ((c.paymentMethod || 'otros') as string).toLowerCase();
+    const amount = Number(c.price || 0);
+    if (Object.prototype.hasOwnProperty.call(paymentAmounts, method)) {
+      paymentAmounts[method] += amount;
+    } else {
+      paymentAmounts['otros'] += amount;
+    }
+  });
+
+  const totalCobrado = Object.values(paymentAmounts).reduce((sum, v) => sum + (Number(v) || 0), 0);
+
+  return {
+    timestamp: new Date().toISOString(),
+    periodType: 'DAILY' as const,
+    periodKey,
+    totalSpaces,
+    occupiedSpaces,
+    freeSpaces,
+    occupancyRate,
+    subsueloStats: JSON.stringify(subsueloStats),
+    timeStats: JSON.stringify(timeStats),
+    filteredClients: JSON.stringify(dailyClients),
+    paymentAmounts: JSON.stringify(paymentAmounts),
+    totalCobrado
+  };
+}
+
+
+private collectClientsFromReports(reports: Report[]): any[] {
+  const all = (reports || []).flatMap(r => this.parseJsonArraySafe(r.filteredClients));
+
+  console.log('[CloseDay] collectClientsFromReports', {
+    reports: reports?.length || 0,
+    clientsExtracted: all.length
+  });
+
+  return all;
+}
+
+private mergeAndDedupReportClients(existingClients: any[], currentClients: any[]): any[] {
+  const merged = [...(existingClients || []), ...(currentClients || [])];
+  const dedup = new Map<string, any>();
+
+  for (const c of merged) {
+    const key = [
+      c?.id ?? 'x',
+      c?.code ?? 'x',
+      c?.entryTimestamp ?? 'x',
+      c?.exitTimestamp ?? 'x'
+    ].join('|');
+
+    // Si hay colisión, preferir el registro más "rico" (el último actual suele traer datos más frescos)
+    dedup.set(key, c);
+  }
+
+  const result = Array.from(dedup.values()).sort((a, b) =>
+    (this.toEpochAny(b?.entryTimestamp) ?? this.toEpochAny(b?.exitTimestamp) ?? 0) -
+    (this.toEpochAny(a?.entryTimestamp) ?? this.toEpochAny(a?.exitTimestamp) ?? 0)
+  );
+
+  console.log('[CloseDay] mergeAndDedupReportClients', {
+    inputExisting: existingClients?.length || 0,
+    inputCurrent: currentClients?.length || 0,
+    mergedRaw: merged.length,
+    deduped: result.length
+  });
+
+  return result;
+}
+
+private buildDailyReportPayloadWithMergedClients(
+  periodKey: string,
+  mergedClients: any[],
+  currentSnapshot: any
+) {
+  const paymentAmounts = this.buildPaymentAmountsFromReportClients(mergedClients);
+  const totalCobrado = Object.values(paymentAmounts).reduce((sum, v) => sum + (Number(v) || 0), 0);
+  const timeStats = this.buildTimeStatsFromReportClients(mergedClients);
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    periodType: 'DAILY' as const,
+    periodKey,
+
+    // snapshot operativo del momento del cierre (último estado)
+    totalSpaces: currentSnapshot.totalSpaces,
+    occupiedSpaces: currentSnapshot.occupiedSpaces,
+    freeSpaces: currentSnapshot.freeSpaces,
+    occupancyRate: currentSnapshot.occupancyRate,
+    subsueloStats: currentSnapshot.subsueloStats,
+
+    // recalculados desde clientes fusionados
+    timeStats: JSON.stringify(timeStats),
+    filteredClients: JSON.stringify(mergedClients),
+    paymentAmounts: JSON.stringify(paymentAmounts),
+    totalCobrado
+  };
+
+  console.log('[CloseDay] buildDailyReportPayloadWithMergedClients', {
+    periodKey,
+    mergedClients: mergedClients.length,
+    totalCobrado,
+    timeStats,
+    paymentAmounts
+  });
+
+  return payload;
+}
+
+
+private buildPaymentAmountsFromReportClients(clients: any[]): Record<string, number> {
+  const paymentAmounts: Record<string, number> = {
+    efectivo: 0,
+    credito: 0,
+    prepago: 0,
+    qr: 0,
+    debito: 0,
+    scaneo: 0,
+    'S/Cargo': 0,
+    otros: 0
+  };
+
+  (clients || []).forEach((client) => {
+    const methodRaw = (client?.paymentMethod || 'otros').toString().trim();
+    const amount = Number(client?.price || 0);
+
+    const methodLower = methodRaw.toLowerCase();
+
+    if (methodLower === 'efectivo') paymentAmounts['efectivo'] += amount;
+    else if (methodLower === 'credito') paymentAmounts['credito'] += amount;
+    else if (methodLower === 'prepago') paymentAmounts['prepago'] += amount;
+    else if (methodLower === 'qr') paymentAmounts['qr'] += amount;
+    else if (methodLower === 'debito') paymentAmounts['debito'] += amount;
+    else if (methodLower === 'scaneo') paymentAmounts['scaneo'] += amount;
+    else if (methodRaw === 'S/Cargo') paymentAmounts['S/Cargo'] += amount;
+    else paymentAmounts['otros'] += amount;
+  });
+
+  return paymentAmounts;
+}
+
+
+private buildTimeStatsFromReportClients(clients: any[]): { under1h: number; between1h3h: number; over3h: number } {
+  const now = Date.now();
+  const stats = {
+    under1h: 0,
+    between1h3h: 0,
+    over3h: 0
+  };
+
+  (clients || []).forEach((client) => {
+    const entryTs = this.toEpochAny(client?.entryTimestamp);
+    if (entryTs === null) return;
+
+    const elapsedHours = (now - entryTs) / 3600000;
+
+    if (elapsedHours < 1) stats.under1h++;
+    else if (elapsedHours <= 3) stats.between1h3h++;
+    else stats.over3h++;
+  });
+
+  return stats;
+}
+
+
+private toEpochAny(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'number' ? value : new Date(value).getTime();
+  return isNaN(n) ? null : n;
+}
+
+
+private isSameDailyReport(report: Report, periodKey: string): boolean {
+  if (!report) return false;
+
+  // Compatibilidad con reportes nuevos
+  if (report.periodType === 'MONTHLY') return false;
+  if (report.periodType === 'DAILY' && report.periodKey === periodKey) return true;
+
+  // Compatibilidad con legacy sin periodType/periodKey
+  const tsDay = (report.timestamp || '').slice(0, 10);
+  const looksDaily = !report.periodKey || report.periodKey.length === 10;
+  return looksDaily && tsDay === periodKey;
+}
+
+
+private parseJsonArraySafe(value?: string): any[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 
 reserveOrUpdateClient(data: {
