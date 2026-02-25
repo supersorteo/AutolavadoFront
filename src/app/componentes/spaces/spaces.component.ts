@@ -2348,8 +2348,76 @@ exportClientsDbToExcel(): void {
 
 
 
-loadAllClientsFromBackend(): void {
+loadAllClientsFromBackend0(): void {
   this.autolavadoService.getAllClientsFromBackend().subscribe({
+    next: (clients) => {
+      const uniqueClients = this.dedupeClientsForUI(clients);
+
+      this.allClients = uniqueClients;
+      this.filteredClientsAdmin = uniqueClients;
+
+      console.log('Clientes únicos cargados desde backend (dedupe frontend):', uniqueClients);
+    },
+    error: (err) => {
+      console.error('Error cargando clientes', err);
+      alert('No se pudieron cargar los clientes');
+    }
+  });
+}
+
+
+
+private getClientIdentityKeyForUI(client: Client): string {
+  const dni = (client.dni || '').toString().trim();
+  const phone = (client.phoneIntl || client.phoneRaw || '').toString().replace(/\D/g, '');
+  const name = (client.name || '').toString().trim().toLowerCase();
+
+  if (dni) return `dni:${dni}`;
+  if (phone) return `phone:${phone}`;
+  return `name:${name}`;
+}
+
+private getClientSortTsForUI(client: Client): number {
+  return this.toTimestamp(client.entryTimestamp)
+    ?? this.toTimestamp(client.exitTimestamp)
+    ?? Number(client.id || 0);
+}
+
+private dedupeClientsForUI(clients: Client[]): Client[] {
+  const sorted = [...(clients || [])].sort(
+    (a, b) => this.getClientSortTsForUI(b) - this.getClientSortTsForUI(a)
+  );
+
+  const seen = new Map<string, Client>();
+
+  for (const c of sorted) {
+    const key = this.getClientIdentityKeyForUI(c);
+    if (!seen.has(key)) {
+      seen.set(key, c);
+    }
+  }
+
+  const result = Array.from(seen.values());
+
+  console.log('[Clients UI] dedupeClientsForUI', {
+    raw: clients?.length || 0,
+    unique: result.length,
+    sample: result.slice(0, 5).map(c => ({
+      id: c.id,
+      dni: c.dni,
+      name: c.name,
+      vehicle: c.vehicle,
+      exitTimestamp: c.exitTimestamp
+    }))
+  });
+
+  return result;
+}
+
+
+
+loadAllClientsFromBackend(): void {
+  this.autolavadoService.getUniqueClientsFromBackend().subscribe({
     next: (clients) => {
       this.allClients = clients;
       this.filteredClientsAdmin = clients;
@@ -3957,7 +4025,7 @@ cerrarDia0(): void {
   });
 }
 
-cerrarDia(): void {
+cerrarDia1(): void {
   const hoy = new Date().toLocaleDateString('es-AR');
   console.log('[CloseDay] Iniciando cierre del dia (generar reporte final + reset)...');
 
@@ -3994,6 +4062,38 @@ cerrarDia(): void {
 }
 
 
+cerrarDia(): void {
+  const hoy = new Date().toLocaleDateString('es-AR');
+  console.log('[CloseDay] Iniciando cierre manual del día via backend unificado...');
+
+  this.autolavadoService.finalizeDailyReportAndCloseDayInBackend$().subscribe({
+    next: () => {
+      console.log('[CloseDay] Día cerrado correctamente (backend finalizó reporte + reset)');
+
+      this.sentReleaseWhatsappBySpace.clear();
+      localStorage.removeItem(this.WHATSAPP_SENT_STORAGE_KEY);
+
+      this.filterSpaces();
+      this.cdr.detectChanges();
+
+      this.cerrarDiaResultMessage =
+        `Día ${hoy} cerrado.\n` +
+        `Se consolidó el reporte diario final y luego se liberaron los espacios.\n` +
+        `Datos sincronizados con el servidor.`;
+
+      this.showModal('closeDayResultModal');
+    },
+    error: (err) => {
+      console.warn('[CloseDay] Error en cierre manual unificado', err);
+
+      this.cerrarDiaResultMessage =
+        'No se pudo completar el cierre del día en el servidor (reporte final + reset).\n' +
+        'No se aplicó el cierre completo. Intenta nuevamente.';
+
+      this.showModal('closeDayResultModal');
+    }
+  });
+}
 
 
  deleteSpace(): void {

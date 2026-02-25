@@ -81,11 +81,11 @@ export class AutolavadoService {
 
 
 
-   //private API_BASE = 'http://localhost:8080/api'
+   private API_BASE = 'http://localhost:8080/api'
   // private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
 
      //danilo pruebas
-  private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
+  //private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
 
 
 
@@ -525,7 +525,10 @@ initializeDataPreferBackend(force: boolean = false): void {
 }
 
 upsertDailyReportSnapshotBeforeClose$(): Observable<Report | null> {
-  const periodKey = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
+ // const periodKey = new Date().toISOString().slice(0, 10); // yyyy-MM-dd
+  const now = new Date();
+  const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
   const currentSnapshot = this.buildDailyReportPayloadFromCurrentState(periodKey);
   const currentClients = this.parseJsonArraySafe(currentSnapshot.filteredClients);
 
@@ -574,6 +577,7 @@ upsertDailyReportSnapshotBeforeClose$(): Observable<Report | null> {
       // Construir payload final consolidado (usa snapshot actual para stats de espacios del momento del cierre)
       const finalPayload = this.buildDailyReportPayloadWithMergedClients(periodKey, mergedClients, currentSnapshot);
 
+      (finalPayload as any).dailyFinal = true;
       // Borrar reportes diarios existentes del día (si hay) y recrear consolidado
       const deleteCalls = existingDailyReports.map(r =>
         this.http.delete<void>(`${this.API_BASE}/reports/${r.id}`).pipe(
@@ -599,6 +603,63 @@ upsertDailyReportSnapshotBeforeClose$(): Observable<Report | null> {
     }),
     catchError((err) => {
       console.error('[CloseDay] Error generando/reemplazando reporte diario consolidado', err);
+      throw err;
+    })
+  );
+}
+
+finalizeDailyReportAndCloseDayInBackend$(): Observable<void> {
+  console.log('[CloseDay] Ejecutando cierre del día en backend (finalizar reporte + reset)...');
+
+  return this.http.post<void>(`${this.API_BASE}/reports/daily/finalize-and-close`, {}).pipe(
+    switchMap(() => {
+      console.log('[CloseDay] Backend cerró el día. Recargando estado (subsuelos/spaces/clients)...');
+
+      return forkJoin({
+        subsuelos: this.loadSubsuelosFromBackend(),
+        spaces: this.loadSpacesFromBackend(),
+        clients: this.loadClientsFromBackend()
+      });
+    }),
+    tap(({ subsuelos, spaces, clients }) => {
+      const spacesMap: { [key: string]: Space } = {};
+      spaces.forEach(s => spacesMap[s.key] = s);
+
+      const clientsMap: { [key: string]: Client } = {};
+      clients.forEach(c => clientsMap[c.id.toString()] = c);
+
+      // Rehidratar relación space.client para UI
+      Object.values(spacesMap).forEach(space => {
+        if (space.occupied && space.clientId && clientsMap[space.clientId]) {
+          space.client = clientsMap[space.clientId];
+        } else {
+          space.client = null;
+        }
+      });
+
+      this.subsuelosSubject.next(subsuelos);
+      this.spacesSubject.next({ ...spacesMap });
+      this.clientsSubject.next({ ...clientsMap });
+
+      // Asegurar currentSubId válido
+      const currentSubId = this.currentSubIdSubject.value;
+      const hasCurrent = !!currentSubId && subsuelos.some(s => s.id === currentSubId);
+      if (!hasCurrent && subsuelos.length > 0) {
+        this.currentSubIdSubject.next(subsuelos[0].id);
+      }
+
+      this.saveAll();
+
+      console.log('[CloseDay] Estado sincronizado tras cierre backend', {
+        subsuelos: subsuelos.length,
+        spaces: Object.keys(spacesMap).length,
+        clients: Object.keys(clientsMap).length,
+        currentSubId: this.currentSubIdSubject.value
+      });
+    }),
+    map(() => void 0),
+    catchError((err) => {
+      console.error('[CloseDay] Error en cierre backend unificado', err);
       throw err;
     })
   );
@@ -972,6 +1033,11 @@ resetDataInBackend(): Observable<void> {
 
 getAllClientsFromBackend(): Observable<Client[]> {
   return this.http.get<Client[]>(`${this.API_BASE}/clients`);
+}
+
+
+getUniqueClientsFromBackend(): Observable<Client[]> {
+  return this.http.get<Client[]>(`${this.API_BASE}/clients/unique`);
 }
 
 

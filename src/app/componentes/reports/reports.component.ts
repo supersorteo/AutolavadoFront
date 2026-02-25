@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, takeUntil, combineLatest, catchError, of } from 'rxjs';
+import { Subject, takeUntil, combineLatest, catchError, of, map, switchMap, forkJoin } from 'rxjs';
 import { Client, Report, Space, Subsuelo } from '../../models/autolavado.model';
 import { AutolavadoService } from '../../services/autolavado.service';
 import { HttpClient } from '@angular/common/http';
@@ -81,10 +81,10 @@ pageSizeDaily = 5;
   editClientHeaderMessage = '';
   private editClientHeaderTimer: any = null;
 
- // private API_BASE = 'http://localhost:8080/api'
+  private API_BASE = 'http://localhost:8080/api'
   //private API_BASE = 'https://excellsiorback-production.up.railway.app/api'
     //danilo pruebas
-  private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
+  //private API_BASE = "https://exellssiorpruebadanilo1-production.up.railway.app/api"
 
   showReportsList = false;
   showClientsRanking = false;
@@ -1221,7 +1221,7 @@ private applyDailyClientFiltersAndPagination(): void {
 
 
 
-generateAndSaveReport(isManual: boolean = false): void {
+generateAndSaveReport0(isManual: boolean = false): void {
   const type = isManual ? 'MANUAL' : 'AUTOMATICO';
   console.log(`%cINICIANDO GENERACION DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
 
@@ -1269,7 +1269,275 @@ generateAndSaveReport(isManual: boolean = false): void {
   });
 }
 
+generateAndSaveReport1(isManual: boolean = false): void {
+  const type = isManual ? 'MANUAL' : 'AUTOMATICO';
 
+  console.log(`%cINICIANDO GENERACION DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+
+  const clientsForReport = this.dailyClients;
+  if (!clientsForReport.length) {
+    if (isManual) alert('No hay clientes para generar el reporte del dia');
+    return;
+  }
+
+  const enrichedClients = this.enrichClientsForReport(clientsForReport);
+
+  const now = new Date();
+  const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const reportData: any = this.buildReportPayload(enrichedClients, 'DAILY', periodKey);
+  reportData.dailyFinal = false; // manual/auto intermedio
+
+  console.log('[DIARIO] payload reportData:', reportData);
+
+  this.http.post<Report>(`${this.API_BASE}/reports`, reportData).subscribe({
+    next: (savedReport) => {
+      const detailHtml = this.autolavadoService.generateReportDetailHtml({
+        ...reportData,
+        id: savedReport.id,
+        timestamp: savedReport.timestamp,
+        subsueloStats: reportData.subsueloStats,
+        timeStats: reportData.timeStats,
+        filteredClients: reportData.filteredClients,
+        paymentAmounts: reportData.paymentAmounts,
+        totalCobrado: reportData.totalCobrado
+      } as Report);
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_exellsior_${periodKey}_${isManual ? 'manual' : 'automatico'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showSuccessToast(isManual ? 'Reporte manual generado (no final)' : 'Reporte diario automatico generado (no final)');
+    },
+    error: (error) => {
+      console.error('Error al generar reporte diario', error);
+      this.showErrorToast('Error al generar el reporte');
+    }
+  });
+}
+
+generateAndSaveReport(isManual: boolean = false): void {
+  const type = isManual ? 'MANUAL' : 'AUTOMATICO';
+  console.log(`%cINICIANDO GENERACION DE REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+
+  const clientsForReport = this.dailyClients || [];
+  const enrichedClients = this.enrichClientsForReport(clientsForReport);
+
+  // ✅ periodKey local (evita problemas UTC cerca de medianoche)
+  const now = new Date();
+  //const periodKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const periodKey = this.getLocalPeriodKey();
+
+  console.log('[DIARIO] generateAndSaveReport input', {
+    type,
+    periodKey,
+    currentDailyClients: clientsForReport.length,
+    enrichedClients: enrichedClients.length
+  });
+
+  this.http.get<Report[]>(`${this.API_BASE}/reports`).pipe(
+    map((reports) => (reports || []).filter(r => this.isSameDailyReportByPeriodKey(r, periodKey))),
+    switchMap((existingDailyReports) => {
+      const existingClients = existingDailyReports.flatMap(r => this.parseJsonArraySafe(r.filteredClients));
+      const mergedClients = this.mergeAndDedupDailyReportClients(existingClients, enrichedClients);
+
+      console.log('[DIARIO] merge resultado', {
+        periodKey,
+        existingReports: existingDailyReports.length,
+        existingClients: existingClients.length,
+        currentClients: enrichedClients.length,
+        mergedClients: mergedClients.length,
+        existingReportIds: existingDailyReports.map(r => r.id)
+      });
+
+      // Si no hay nada para reportar ni antes ni ahora
+      if (!mergedClients.length) {
+        if (isManual) alert('No hay clientes para generar el reporte del dia');
+        return of(null);
+      }
+
+      // Construir payload consolidado del día (pero NO final)
+      const reportData: any = this.buildDailyReportPayloadMerged(mergedClients, periodKey);
+      reportData.dailyFinal = false; // ✅ manual/auto intermedio
+
+      console.log('[DIARIO] payload consolidado (dailyFinal=false):', reportData);
+
+      // Borrar diarios previos del mismo día y recrear consolidado único
+      const deleteCalls = existingDailyReports.map(r =>
+        this.http.delete<void>(`${this.API_BASE}/reports/${r.id}`).pipe(
+          catchError((err) => {
+            console.warn('[DIARIO] Error borrando reporte diario previo', { reportId: r.id, err });
+            // No aborta; seguimos para no bloquear operación del usuario
+            return of(void 0);
+          })
+        )
+      );
+
+      return (deleteCalls.length ? forkJoin(deleteCalls) : of([])).pipe(
+        switchMap(() => this.http.post<Report>(`${this.API_BASE}/reports`, reportData)),
+        map((savedReport) => ({ savedReport, reportData, periodKey }))
+      );
+    })
+  ).subscribe({
+    next: (result) => {
+      if (!result) return;
+
+      const { savedReport, reportData, periodKey } = result;
+
+      const detailHtml = this.autolavadoService.generateReportDetailHtml({
+        ...reportData,
+        id: savedReport.id,
+        timestamp: savedReport.timestamp,
+        subsueloStats: reportData.subsueloStats,
+        timeStats: reportData.timeStats,
+        filteredClients: reportData.filteredClients,
+        paymentAmounts: reportData.paymentAmounts,
+        totalCobrado: reportData.totalCobrado,
+        dailyFinal: false
+      } as Report);
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_exellsior_${periodKey}_${isManual ? 'manual' : 'automatico'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showSuccessToast(
+        isManual
+          ? 'Reporte diario generado/actualizado (consolidado del día, no final)'
+          : 'Reporte diario automático generado/actualizado (no final)'
+      );
+    },
+    error: (error) => {
+      console.error('[DIARIO] Error al generar reporte diario consolidado', error);
+      this.showErrorToast('Error al generar el reporte diario');
+    }
+  });
+}
+
+private getLocalPeriodKey(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+
+private isSameDailyReportByPeriodKey(report: Report, periodKey: string): boolean {
+  if (!report) return false;
+
+  // Excluir mensuales
+  if (report.periodType === 'MONTHLY') return false;
+
+  // Reportes nuevos con periodType/periodKey correctos
+  if (report.periodType === 'DAILY' && report.periodKey === periodKey) return true;
+
+  // Compatibilidad legacy (reportes viejos sin periodType/periodKey)
+  const tsDay = (report.timestamp || '').slice(0, 10);
+  const looksDaily = !report.periodKey || report.periodKey.length === 10;
+  return looksDaily && tsDay === periodKey;
+}
+
+
+private mergeAndDedupDailyReportClients(existingClients: any[], currentClients: any[]): any[] {
+  const merged = [...(existingClients || []), ...(currentClients || [])];
+  const dedup = new Map<string, any>();
+
+  for (const c of merged) {
+    const key = [
+      c?.id ?? 'x',
+      c?.code ?? 'x',
+      c?.entryTimestamp ?? 'x',
+      c?.exitTimestamp ?? 'x'
+    ].join('|');
+
+    // Si colisiona, el último reemplaza al anterior (útil si viene más completo)
+    dedup.set(key, c);
+  }
+
+  const result = Array.from(dedup.values()).sort((a, b) =>
+    (this.toEpoch(b?.entryTimestamp) ?? this.toEpoch(b?.exitTimestamp) ?? 0) -
+    (this.toEpoch(a?.entryTimestamp) ?? this.toEpoch(a?.exitTimestamp) ?? 0)
+  );
+
+  console.log('[DIARIO] mergeAndDedupDailyReportClients', {
+    existingClients: existingClients?.length || 0,
+    currentClients: currentClients?.length || 0,
+    mergedRaw: merged.length,
+    deduped: result.length
+  });
+
+  return result;
+}
+
+
+private buildTimeStatsFromReportClients(clients: any[]): { under1h: number; between1h3h: number; over3h: number } {
+  const now = Date.now();
+  const stats = {
+    under1h: 0,
+    between1h3h: 0,
+    over3h: 0
+  };
+
+  (clients || []).forEach((c) => {
+    const entryTs = this.toEpoch(c?.entryTimestamp);
+    if (entryTs === null) return;
+
+    const hours = (now - entryTs) / 3600000;
+
+    if (hours < 1) stats.under1h++;
+    else if (hours <= 3) stats.between1h3h++;
+    else stats.over3h++;
+  });
+
+  return stats;
+}
+
+private buildDailyReportPayloadMerged(mergedClients: any[], periodKey: string) {
+  const paymentAmounts = this.buildPaymentAmounts(mergedClients);
+  const totalCobrado = Object.values(paymentAmounts).reduce((sum, val) => sum + (Number(val) || 0), 0);
+  const mergedTimeStats = this.buildTimeStatsFromReportClients(mergedClients);
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    periodType: 'DAILY' as const,
+    periodKey,
+
+    // Snapshot del estado actual al momento de generar
+    totalSpaces: this.totalSpaces,
+    occupiedSpaces: this.occupiedSpaces,
+    freeSpaces: this.freeSpaces,
+    occupancyRate: this.occupancyRate,
+    subsueloStats: JSON.stringify(this.subsueloStats),
+
+    // Recalculados desde servicios fusionados del día
+    timeStats: JSON.stringify(mergedTimeStats),
+    filteredClients: JSON.stringify(mergedClients),
+    paymentAmounts: JSON.stringify(paymentAmounts),
+    totalCobrado
+  };
+
+  console.log('[DIARIO] buildDailyReportPayloadMerged', {
+    periodKey,
+    mergedClients: mergedClients.length,
+    totalCobrado,
+    paymentAmounts,
+    mergedTimeStats
+  });
+
+  return payload;
+}
 
 
 // En reports.component.ts - Métodos de Toast (CORREGIDOS)
@@ -1846,7 +2114,7 @@ private buildMonthlyPayloadFromDailyReports(dailyReports: Report[], monthKey: st
 }
 
 
-generateAndSaveMonthlyReport(isManual: boolean = true): void {
+generateAndSaveMonthlyReport0(isManual: boolean = true): void {
   const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';
   const now = new Date();
   const monthKey = now.toISOString().slice(0, 7); // yyyy-MM
@@ -1917,6 +2185,100 @@ generateAndSaveMonthlyReport(isManual: boolean = true): void {
     error: (error) => {
       console.error('[MENSUAL] Error cargando reportes para consolidar', error);
       this.showErrorToast('Error al leer reportes diarios para el mensual');
+    }
+  });
+}
+
+generateAndSaveMonthlyReport1(isManual: boolean = true): void {
+  const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const runDateLabel = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  console.log(`%cINICIANDO REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+  console.log('[MENSUAL] monthKey:', monthKey);
+
+  this.http.post<Report>(`${this.API_BASE}/reports/monthly/generate?month=${monthKey}`, {}).subscribe({
+    next: (savedReport) => {
+      console.log('[MENSUAL] Reporte mensual generado en backend', savedReport);
+
+      const detailHtml = this.autolavadoService.generateReportDetailHtml(
+        savedReport as Report,
+        {
+          periodLabel: 'Servicios del mes',
+          periodDateLabel: `${monthLabel} hasta ${runDateLabel}`
+        }
+      );
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_mensual_exellsior_${monthKey}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showSuccessToast(`Reporte mensual generado (${monthLabel})`);
+    },
+    error: (error) => {
+      console.error('[MENSUAL] Error generando reporte mensual', error);
+      this.showErrorToast('Error al generar el reporte mensual');
+    }
+  });
+}
+
+generateAndSaveMonthlyReport(isManual: boolean = true): void {
+  const type = isManual ? 'MENSUAL-MANUAL' : 'MENSUAL-AUTO';
+  const now = new Date();
+
+  // ✅ monthKey local (evita desfase por UTC cerca de medianoche)
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  const monthLabel = now.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const runDateLabel = now.toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  console.log(`%cINICIANDO REPORTE ${type}`, 'color: #0ea5e9; font-weight: bold;');
+  console.log('[MENSUAL] monthKey local:', monthKey);
+
+  // ✅ El backend aplica la lógica correcta:
+  //    - preferir DAILY con dailyFinal=true
+  //    - fallback al último DAILY por día si no hay final
+  this.http.post<Report>(`${this.API_BASE}/reports/monthly/generate?month=${monthKey}`, {}).subscribe({
+    next: (savedReport) => {
+      console.log('[MENSUAL] Reporte mensual generado por backend', savedReport);
+
+      const detailHtml = this.autolavadoService.generateReportDetailHtml(
+        savedReport as Report,
+        {
+          periodLabel: 'Servicios del mes',
+          periodDateLabel: `${monthLabel} hasta ${runDateLabel}`
+        }
+      );
+
+      const blob = new Blob([detailHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `reporte_mensual_exellsior_${monthKey}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      URL.revokeObjectURL(url);
+
+      this.showSuccessToast(`Reporte mensual generado (${monthLabel})`);
+    },
+    error: (error) => {
+      console.error('[MENSUAL] Error generando reporte mensual en backend', error);
+      this.showErrorToast('Error al generar el reporte mensual');
     }
   });
 }

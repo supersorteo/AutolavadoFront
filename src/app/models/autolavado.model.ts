@@ -77,6 +77,8 @@ export interface Report {
   filteredClients: string; // JSON string
   paymentAmounts?: string;     // Opcional
   totalCobrado?: number;
+  dailyFinal?: boolean;
+
 }
 
 
