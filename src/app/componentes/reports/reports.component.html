@@ -557,5 +557,5 @@
   </div>
 </div>
 
-    <app-reports-list *ngIf="showReportsList"></app-reports-list>
+    <app-reports-list *ngIf="showReportsList" (closed)="closeReportsList()"></app-reports-list>
 

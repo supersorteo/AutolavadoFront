@@ -332,6 +332,10 @@ toggleReportsList(): void {
   }
 }
 
+closeReportsList(): void {
+  this.showReportsList = false;
+}
+
 
 
 toggleClientsRanking(): void {
